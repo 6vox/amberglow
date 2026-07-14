@@ -1,5 +1,5 @@
 /**
- * AMBERGLOW — 見た目調整（理想リファレンス寄せ中・時間帯固定）
+ * AMBERGLOW — 理想リファレンス寄せ（時間帯固定の調整中）
  */
 
 export type RGB = readonly [number, number, number]
@@ -11,30 +11,10 @@ export const LOCATION = {
 } as const
 
 export const PALETTES = {
-  day: [
-    [220, 70, 30],
-    [235, 150, 40],
-    [90, 150, 210],
-    [250, 235, 150],
-  ] as const satisfies readonly RGB[],
-  evening: [
-    [220, 70, 30],
-    [235, 150, 40],
-    [90, 150, 210],
-    [250, 235, 150],
-  ] as const satisfies readonly RGB[],
-  sunset: [
-    [220, 70, 30],
-    [235, 150, 40],
-    [90, 150, 210],
-    [250, 235, 150],
-  ] as const satisfies readonly RGB[],
-  night: [
-    [220, 70, 30],
-    [235, 150, 40],
-    [90, 150, 210],
-    [250, 235, 150],
-  ] as const satisfies readonly RGB[],
+  day: [[210, 55, 25], [235, 140, 35], [85, 145, 205], [255, 235, 170]] as const satisfies readonly RGB[],
+  evening: [[210, 55, 25], [235, 140, 35], [85, 145, 205], [255, 235, 170]] as const satisfies readonly RGB[],
+  sunset: [[210, 55, 25], [235, 140, 35], [85, 145, 205], [255, 235, 170]] as const satisfies readonly RGB[],
+  night: [[210, 55, 25], [235, 140, 35], [85, 145, 205], [255, 235, 170]] as const satisfies readonly RGB[],
 } as const
 
 export const PHASE_HOURS = {
@@ -45,23 +25,22 @@ export const PHASE_HOURS = {
 } as const
 
 export const VISUAL = {
-  baseSpeed: 0.28,
+  baseSpeed: 0.26,
   speedStep: 0.08,
   speedMin: 0.1,
   speedMax: 1.6,
 
-  warmBlobCount: 5,
+  warmBlobCount: 6,
   coolDiscCount: 2,
-  /** 油膜上の暗い斑点。多すぎると不快なので控えめ */
-  cellCount: 70,
-  warmAlpha: 0.72,
-  coolAlpha: 0.5,
-  cellAlpha: 0.4,
-  coreGain: 0.45,
-  liquidGain: 1.15,
-  fadeRadius: 0.82,
-  floorColor: [12, 11, 10] as RGB,
-  floorNoiseStrength: 0.02,
+  cellCount: 90,
+  warmAlpha: 0.78,
+  coolAlpha: 0.55,
+  cellAlpha: 0.5,
+  coreGain: 0.38,
+  liquidGain: 1.2,
+  fadeRadius: 0.85,
+  floorColor: [22, 20, 18] as RGB,
+  floorNoiseStrength: 0.025,
 
   layerOpacity: 1,
   blurPx: 0,
