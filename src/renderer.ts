@@ -8,19 +8,28 @@ interface Flow {
   colorIndex: number
   thickness: number
   speed: number
+  /** 画面内の基準位置 0–1 */
+  originX: number
+  originY: number
+  spanX: number
+  spanY: number
 }
 
-interface Blot {
+interface Stain {
   seed: number
   phase: number
   colorIndex: number
   size: number
   speed: number
+  aspect: number
+  angle: number
+  originX: number
+  originY: number
 }
 
 /**
  * リキッドライト風のキャンバス描画。
- * VisualParams のみを参照し、音声連動時も同インターフェースで変調可能。
+ * 光玉の加算グローではなく、細い流れと床へのにじみを中心にする。
  */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
@@ -31,7 +40,7 @@ export class AmberglowRenderer {
   private width = 0
   private height = 0
   private flows: Flow[] = []
-  private blots: Blot[] = []
+  private stains: Stain[] = []
   private time = 0
   private layerReady = false
 
@@ -70,35 +79,41 @@ export class AmberglowRenderer {
   }
 
   update(dt: number, params: VisualParams): void {
-    const audioBoost = 1 + params.audioEnergy * 0.35
+    const audioBoost = 1 + params.audioEnergy * 0.25
     this.time += dt * params.speed * audioBoost
     this.paintFrame(params)
   }
 
   private initEntities(): void {
-    this.flows = Array.from({ length: VISUAL.flowCount }, (_, i) => ({
-      seed: i * 17.13 + 3.7,
-      phase: i * 1.7,
-      colorIndex: i % 4,
-      thickness: lerp(
-        VISUAL.flowThicknessMin,
-        VISUAL.flowThicknessMax,
-        fract(Math.sin(i * 12.9898) * 43758.5453),
-      ),
-      speed: 0.7 + fract(Math.sin(i * 78.233) * 43758.5453) * 0.8,
-    }))
+    this.flows = Array.from({ length: VISUAL.flowCount }, (_, i) => {
+      const r = (n: number) => fract(Math.sin((i + 1) * n) * 43758.5453)
+      return {
+        seed: i * 13.7 + 2.1,
+        phase: r(12.9898) * Math.PI * 2,
+        colorIndex: i % 4,
+        thickness: lerp(VISUAL.flowThicknessMin, VISUAL.flowThicknessMax, r(78.233)),
+        speed: 0.55 + r(39.17) * 0.7,
+        originX: 0.12 + r(4.1) * 0.76,
+        originY: 0.14 + r(8.3) * 0.72,
+        spanX: 0.18 + r(15.2) * 0.35,
+        spanY: 0.16 + r(21.7) * 0.34,
+      }
+    })
 
-    this.blots = Array.from({ length: VISUAL.blotCount }, (_, i) => ({
-      seed: i * 9.41 + 11.2,
-      phase: i * 2.3,
-      colorIndex: (i + 1) % 4,
-      size: lerp(
-        VISUAL.blotSizeMin,
-        VISUAL.blotSizeMax,
-        fract(Math.sin(i * 45.164) * 43758.5453),
-      ),
-      speed: 0.5 + fract(Math.sin(i * 19.19) * 43758.5453) * 0.7,
-    }))
+    this.stains = Array.from({ length: VISUAL.stainCount }, (_, i) => {
+      const r = (n: number) => fract(Math.sin((i + 3) * n) * 24634.917)
+      return {
+        seed: i * 7.9 + 5.4,
+        phase: r(3.1) * Math.PI * 2,
+        colorIndex: (i + 2) % 4,
+        size: lerp(VISUAL.stainSizeMin, VISUAL.stainSizeMax, r(9.2)),
+        speed: 0.35 + r(6.4) * 0.5,
+        aspect: 0.28 + r(11.5) * 0.45,
+        angle: r(2.7) * Math.PI,
+        originX: 0.18 + r(5.5) * 0.64,
+        originY: 0.2 + r(7.8) * 0.58,
+      }
+    })
   }
 
   private paintFrame(params: VisualParams): void {
@@ -111,34 +126,39 @@ export class AmberglowRenderer {
       this.layerReady = true
     }
 
-    // 残像をゆっくり溶かす（点滅しない）
     layerCtx.globalCompositeOperation = 'source-over'
     layerCtx.fillStyle = `rgba(0, 0, 0, ${params.trailFade})`
     layerCtx.fillRect(0, 0, width, height)
 
-    const blur = Math.max(0, params.blur * (1 + params.audioMid * 0.2))
+    const blur = Math.max(0, params.blur * (1 + params.audioMid * 0.15))
+    const opacity = params.opacity * (0.92 + params.audioBass * 0.2)
+
+    // 染みは先に薄く、流れは後から線で乗せる
+    layerCtx.filter = `blur(${blur * 1.6}px)`
+    layerCtx.globalCompositeOperation = 'source-over'
+    for (const stain of this.stains) {
+      this.drawStain(stain, params.colors, shortSide, opacity * 0.55)
+    }
+
     layerCtx.filter = `blur(${blur}px)`
-    layerCtx.globalCompositeOperation = 'lighter'
-
-    const opacity = params.opacity * (0.9 + params.audioBass * 0.25)
-
     for (const flow of this.flows) {
       this.drawFlow(flow, params.colors, shortSide, opacity)
-    }
-    for (const blot of this.blots) {
-      this.drawBlot(blot, params.colors, shortSide, opacity, params.audioHigh)
     }
 
     layerCtx.filter = 'none'
     layerCtx.globalCompositeOperation = 'source-over'
 
-    // コンクリート床の上に光が染みる合成
+    // 床に染みる合成：加算グローを使わない
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
     ctx.drawImage(this.concrete, 0, 0, width, height)
 
+    ctx.globalCompositeOperation = 'soft-light'
+    ctx.globalAlpha = VISUAL.lightMix
+    ctx.drawImage(this.layer, 0, 0, width, height)
+
     ctx.globalCompositeOperation = 'screen'
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = 0.22
     ctx.drawImage(this.layer, 0, 0, width, height)
 
     ctx.globalCompositeOperation = 'multiply'
@@ -158,77 +178,104 @@ export class AmberglowRenderer {
     const { layerCtx, width, height, time } = this
     const t = time * VISUAL.flowDrift * flow.speed + flow.phase
     const color = colors[flow.colorIndex % colors.length]
-    const scale = VISUAL.noiseScale * 900
+    const points = 36
+    const path: Array<{ x: number; y: number }> = []
 
-    const points = 20
     for (let i = 0; i < points; i++) {
       const u = i / (points - 1)
-      const along = u * Math.PI * 2 + flow.seed
+      const wobble =
+        0.55 * Math.sin(u * Math.PI * 2 + t + flow.seed)
+        + 0.28 * Math.sin(u * Math.PI * 5 - t * 0.7 + flow.seed * 1.3)
+        + 0.12 * Math.sin(u * Math.PI * 9 + t * 0.35)
+      const drift = Math.sin(t * 0.35 + flow.seed) * 0.08
+
       const x = width * (
-        0.5
-        + 0.42 * Math.sin(along + t * 0.55)
-        + 0.12 * Math.sin(along * 2.1 - t * 0.3 + flow.seed)
-        + 0.04 * Math.sin(along * scale + t * 0.2)
+        flow.originX
+        + (u - 0.5) * flow.spanX
+        + wobble * flow.spanY * 0.55
+        + drift
       )
       const y = height * (
-        0.5
-        + 0.38 * Math.cos(along * 0.9 - t * 0.4)
-        + 0.14 * Math.sin(along * 1.7 + t * 0.25 + flow.seed * 0.5)
-        + 0.04 * Math.cos(along * scale * 0.8 - t * 0.15)
+        flow.originY
+        + Math.sin(u * Math.PI) * flow.spanY
+        + Math.cos(u * Math.PI * 2 - t * 0.4) * flow.spanX * 0.25
+        + Math.sin(t * 0.22 + flow.seed * 0.5) * 0.06
       )
-
-      const radius = shortSide * flow.thickness * (0.7 + 0.5 * Math.sin(t + u * 4))
-      const edge = 1 - Math.abs(u - 0.5) * 2
-      const alpha = opacity * (0.06 + 0.1 * edge)
-      this.softDisc(layerCtx, x, y, radius, color, alpha)
+      path.push({ x, y })
     }
+
+    const baseWidth = shortSide * flow.thickness
+    // 外側のにじみ
+    this.strokePath(layerCtx, path, baseWidth * 3.2, color, opacity * 0.045)
+    // 本体の細い流れ
+    this.strokePath(layerCtx, path, baseWidth, color, opacity * 0.22)
+    // 芯のハイライトをごく弱く
+    this.strokePath(layerCtx, path, baseWidth * 0.35, color, opacity * 0.12)
   }
 
-  private drawBlot(
-    blot: Blot,
+  private drawStain(
+    stain: Stain,
     colors: RGB[],
     shortSide: number,
     opacity: number,
-    audioHigh: number,
   ): void {
     const { layerCtx, width, height, time } = this
-    const t = time * VISUAL.blotDrift * blot.speed + blot.phase
-    const color = colors[blot.colorIndex % colors.length]
+    const t = time * VISUAL.stainDrift * stain.speed + stain.phase
+    const color = colors[stain.colorIndex % colors.length]
 
     const x = width * (
-      0.5
-      + 0.4 * Math.sin(t * 0.7 + blot.seed)
-      + 0.15 * Math.sin(t * 1.3 + blot.seed * 2)
+      stain.originX
+      + 0.06 * Math.sin(t * 0.5 + stain.seed)
+      + 0.03 * Math.sin(t * 0.9 + stain.seed * 2)
     )
     const y = height * (
-      0.5
-      + 0.35 * Math.cos(t * 0.55 + blot.seed * 1.4)
-      + 0.18 * Math.sin(t * 0.9 - blot.seed)
+      stain.originY
+      + 0.05 * Math.cos(t * 0.4 + stain.seed * 1.2)
+      + 0.025 * Math.sin(t * 0.7 - stain.seed)
     )
 
-    const radius = shortSide * blot.size
-      * (0.85 + 0.2 * Math.sin(t * 0.8))
-      * (1 + audioHigh * 0.15)
-    const alpha = opacity * 0.09 * (1 + audioHigh * 0.2)
-    this.softDisc(layerCtx, x, y, radius, color, alpha)
+    const rx = shortSide * stain.size * (0.9 + 0.1 * Math.sin(t * 0.6))
+    const ry = rx * stain.aspect
+    const angle = stain.angle + Math.sin(t * 0.25) * 0.15
+
+    layerCtx.save()
+    layerCtx.translate(x, y)
+    layerCtx.rotate(angle)
+    layerCtx.scale(1, ry / rx)
+
+    const gradient = layerCtx.createRadialGradient(0, 0, 0, 0, 0, rx)
+    gradient.addColorStop(0, cssRgb(color, opacity * 0.18))
+    gradient.addColorStop(0.55, cssRgb(color, opacity * 0.07))
+    gradient.addColorStop(1, cssRgb(color, 0))
+    layerCtx.fillStyle = gradient
+    layerCtx.beginPath()
+    layerCtx.arc(0, 0, rx, 0, Math.PI * 2)
+    layerCtx.fill()
+    layerCtx.restore()
   }
 
-  private softDisc(
+  private strokePath(
     ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    radius: number,
+    path: Array<{ x: number; y: number }>,
+    lineWidth: number,
     color: RGB,
     alpha: number,
   ): void {
-    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius)
-    gradient.addColorStop(0, cssRgb(color, alpha))
-    gradient.addColorStop(0.45, cssRgb(color, alpha * 0.4))
-    gradient.addColorStop(1, cssRgb(color, 0))
-    ctx.fillStyle = gradient
+    if (path.length < 2 || alpha <= 0) return
     ctx.beginPath()
-    ctx.arc(x, y, radius, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.moveTo(path[0].x, path[0].y)
+    for (let i = 1; i < path.length - 1; i++) {
+      const midX = (path[i].x + path[i + 1].x) * 0.5
+      const midY = (path[i].y + path[i + 1].y) * 0.5
+      ctx.quadraticCurveTo(path[i].x, path[i].y, midX, midY)
+    }
+    const last = path[path.length - 1]
+    ctx.lineTo(last.x, last.y)
+    ctx.strokeStyle = cssRgb(color, alpha)
+    ctx.lineWidth = lineWidth
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.stroke()
   }
 
   private buildConcreteTexture(width: number, height: number, dpr: number): void {
@@ -244,20 +291,20 @@ export class AmberglowRenderer {
     const data = image.data
     const strength = VISUAL.floorNoiseStrength
 
-    // putImageData は transform の影響を受けないため、デバイスピクセルで生成する
     for (let y = 0; y < ph; y++) {
       for (let x = 0; x < pw; x++) {
         const i = (y * pw + x) * 4
         const sx = x / dpr
         const sy = y / dpr
         const n =
-          0.55 * hash2(sx * 0.7, sy * 0.7)
-          + 0.3 * hash2(sx * 0.15, sy * 0.15)
-          + 0.15 * hash2(sx * 0.03, sy * 0.03)
-        const speck = hash2(sx * 3.1, sy * 2.7) > 0.97 ? -40 : 0
-        const v = (n - 0.5) * 255 * strength + speck
+          0.5 * hash2(sx * 0.55, sy * 0.55)
+          + 0.3 * hash2(sx * 0.12, sy * 0.12)
+          + 0.2 * hash2(sx * 0.03, sy * 0.028)
+        const grain = (hash2(sx * 4.2, sy * 3.8) - 0.5) * 18
+        const speck = hash2(sx * 2.8, sy * 2.4) > 0.985 ? -28 : 0
+        const v = (n - 0.5) * 255 * strength + grain + speck
         data[i] = clampByte(br + v)
-        data[i + 1] = clampByte(bg + v * 0.95)
+        data[i + 1] = clampByte(bg + v * 0.96)
         data[i + 2] = clampByte(bb + v * 0.9)
         data[i + 3] = 255
       }
@@ -266,13 +313,13 @@ export class AmberglowRenderer {
     ctx.putImageData(image, 0, 0)
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.strokeStyle = 'rgba(30, 28, 26, 0.08)'
+    ctx.strokeStyle = 'rgba(28, 26, 24, 0.07)'
     ctx.lineWidth = 1
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 28; i++) {
       const x0 = hash2(i, 1) * width
       const y0 = hash2(i, 2) * height
-      const x1 = x0 + (hash2(i, 3) - 0.5) * width * 0.25
-      const y1 = y0 + (hash2(i, 4) - 0.5) * height * 0.25
+      const x1 = x0 + (hash2(i, 3) - 0.5) * width * 0.2
+      const y1 = y0 + (hash2(i, 4) - 0.5) * height * 0.2
       ctx.beginPath()
       ctx.moveTo(x0, y0)
       ctx.lineTo(x1, y1)

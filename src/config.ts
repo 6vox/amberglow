@@ -12,31 +12,34 @@ export const LOCATION = {
   timezoneOffsetHours: 9,
 } as const
 
-/** 時刻連動パレット（昼 / 夕方前 / 日没 / 夜） */
+/**
+ * 時刻連動パレット（昼 / 夕方前 / 日没 / 夜）
+ * ネオン寄りの高彩度を避け、床に染みた顔料寄りの色にする。
+ */
 export const PALETTES = {
   day: [
-    [180, 215, 230],
-    [240, 245, 248],
-    [190, 220, 195],
-    [235, 225, 180],
+    [168, 188, 196],
+    [214, 216, 210],
+    [166, 186, 168],
+    [198, 188, 150],
   ] as const satisfies readonly RGB[],
   evening: [
-    [220, 200, 170],
-    [235, 185, 140],
-    [210, 150, 80],
-    [190, 130, 70],
+    [186, 162, 128],
+    [196, 148, 98],
+    [168, 118, 68],
+    [148, 108, 72],
   ] as const satisfies readonly RGB[],
   sunset: [
-    [230, 120, 50],
-    [210, 70, 45],
-    [220, 110, 140],
-    [140, 70, 160],
+    [176, 96, 52],
+    [158, 62, 48],
+    [168, 88, 102],
+    [98, 58, 108],
   ] as const satisfies readonly RGB[],
   night: [
-    [25, 35, 70],
-    [55, 40, 95],
-    [20, 55, 45],
-    [90, 25, 35],
+    [28, 36, 58],
+    [48, 40, 72],
+    [24, 48, 42],
+    [72, 32, 36],
   ] as const satisfies readonly RGB[],
 } as const
 
@@ -58,45 +61,45 @@ export const PHASE_HOURS = {
 /** 描画・動きのデフォルト */
 export const VISUAL = {
   /** 基本の時間進行速度（1 = 標準） */
-  baseSpeed: 1,
+  baseSpeed: 0.72,
   /** 速度キー操作の刻み */
-  speedStep: 0.12,
+  speedStep: 0.1,
   /** 速度の下限・上限 */
-  speedMin: 0.25,
-  speedMax: 2.5,
+  speedMin: 0.2,
+  speedMax: 2.2,
 
-  /** レイヤー全体の透明度（コンクリート質感を残す） */
-  layerOpacity: 0.42,
-  /** フレーム間の残像（高いほどにじみやすい） */
-  trailFade: 0.045,
-  /** ソフトブラーの強さ（px） */
-  blurPx: 28,
+  /** 光レイヤーの強さ（低いほどコンクリートが残る） */
+  layerOpacity: 0.55,
+  /** フレーム間の残像（低いほど輪郭が残る／高いほど溶ける） */
+  trailFade: 0.028,
+  /** 線のにじみブラー（px）。大きすぎると玉っぽくなる */
+  blurPx: 10,
 
-  /** 流れの本数 */
-  flowCount: 9,
-  /** にじみ斑点の数 */
-  blotCount: 14,
+  /** 細い流れの本数 */
+  flowCount: 7,
+  /** にじみ染みの数 */
+  stainCount: 5,
 
   /** 流れの太さ（画面短辺に対する比率） */
-  flowThicknessMin: 0.018,
-  flowThicknessMax: 0.055,
-  /** 斑点の大きさ */
-  blotSizeMin: 0.04,
-  blotSizeMax: 0.14,
+  flowThicknessMin: 0.006,
+  flowThicknessMax: 0.018,
+  /** 染みの長径 */
+  stainSizeMin: 0.08,
+  stainSizeMax: 0.2,
 
-  /** 動きの空間スケール */
-  noiseScale: 0.0011,
-  /** 流れの速度係数 */
-  flowDrift: 0.18,
-  /** 斑点の速度係数 */
-  blotDrift: 0.09,
+  /** 流れの速度係数（粘性寄り） */
+  flowDrift: 0.085,
+  /** 染みの速度係数 */
+  stainDrift: 0.035,
 
-  /** コンクリートオーバーレイの強さ */
-  concreteOpacity: 0.28,
+  /** 光レイヤーを床へ乗せる強さ */
+  lightMix: 0.62,
+  /** コンクリートの質感を戻す強さ */
+  concreteOpacity: 0.48,
   /** 床のベース色（コンクリート寄り） */
-  floorColor: [48, 46, 44] as RGB,
+  floorColor: [58, 55, 52] as RGB,
   /** 床の明るさゆらぎ */
-  floorNoiseStrength: 0.12,
+  floorNoiseStrength: 0.16,
 } as const
 
 export type PaletteName = keyof typeof PALETTES
