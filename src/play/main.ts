@@ -1,7 +1,7 @@
 import { attachControls, type ControlState } from '../controls'
 import { paletteFromTime } from '../palette'
 import { AmberglowRenderer } from '../renderer'
-import { createVisualParams } from '../visualParams'
+import { createVisualParams, setPaletteColors } from '../visualParams'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')
 const helpEl = document.querySelector<HTMLElement>('#help')
@@ -12,9 +12,11 @@ if (!canvas || !helpEl) {
 
 const params = createVisualParams()
 const state: ControlState = {
-  paletteMode: 'auto',
+  // 見た目調整中は固定パレット（時間帯連動は後で戻す）
+  paletteMode: 'sunset',
   helpVisible: false,
 }
+setPaletteColors(params, 'sunset')
 
 const renderer = new AmberglowRenderer(canvas)
 

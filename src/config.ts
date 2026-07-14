@@ -1,5 +1,6 @@
 /**
  * AMBERGLOW — 見た目調整用の主要パラメータ
+ * いまは理想リファレンス寄せの固定パレットで調整中。
  */
 
 export type RGB = readonly [number, number, number]
@@ -10,31 +11,34 @@ export const LOCATION = {
   timezoneOffsetHours: 9,
 } as const
 
-/** 染料っぽいパレット（どの時間帯も投影として読める明るさ） */
+/**
+ * 理想リファレンス寄せ（暖色油膜 + 寒色ディスク + 明るい核）
+ * 時間帯連動は後で戻す。
+ */
 export const PALETTES = {
   day: [
-    [170, 205, 210],
-    [235, 235, 230],
-    [160, 195, 155],
-    [220, 205, 140],
+    [230, 90, 35],
+    [240, 170, 55],
+    [70, 130, 200],
+    [245, 230, 160],
   ] as const satisfies readonly RGB[],
   evening: [
-    [235, 175, 95],
-    [230, 125, 55],
-    [210, 195, 130],
-    [110, 150, 170],
+    [230, 90, 35],
+    [240, 170, 55],
+    [70, 130, 200],
+    [245, 230, 160],
   ] as const satisfies readonly RGB[],
   sunset: [
-    [230, 75, 35],
-    [240, 150, 50],
-    [70, 125, 195],
-    [210, 55, 70],
+    [230, 90, 35],
+    [240, 170, 55],
+    [70, 130, 200],
+    [245, 230, 160],
   ] as const satisfies readonly RGB[],
   night: [
-    [50, 80, 160],
-    [120, 60, 150],
-    [40, 110, 95],
-    [160, 45, 60],
+    [230, 90, 35],
+    [240, 170, 55],
+    [70, 130, 200],
+    [245, 230, 160],
   ] as const satisfies readonly RGB[],
 } as const
 
@@ -46,23 +50,25 @@ export const PHASE_HOURS = {
 } as const
 
 export const VISUAL = {
-  baseSpeed: 0.38,
+  baseSpeed: 0.32,
   speedStep: 0.08,
-  speedMin: 0.12,
-  speedMax: 1.8,
+  speedMin: 0.1,
+  speedMax: 1.6,
 
-  blobCount: 7,
-  blobSizeMin: 0.28,
-  blobSizeMax: 0.55,
-  bubbleDensity: 40,
-  /** 油の不透明度（高いほど色面が立つ） */
-  oilAlpha: 0.55,
-  /** 投影全体のゲイン */
-  liquidGain: 1.05,
-  /** 床へ溶ける楕円の広さ */
-  fadeRadius: 0.72,
-  floorColor: [36, 34, 32] as RGB,
-  floorNoiseStrength: 0.06,
+  /** 暖色の大きな油だまり */
+  warmBlobCount: 4,
+  /** 寒色の半透明ディスク */
+  coolDiscCount: 2,
+  /** 油の中の暗いセル（泡）数 */
+  cellCount: 120,
+  warmAlpha: 0.62,
+  coolAlpha: 0.42,
+  cellAlpha: 0.55,
+  coreGain: 0.7,
+  liquidGain: 1.1,
+  fadeRadius: 0.78,
+  floorColor: [18, 16, 14] as RGB,
+  floorNoiseStrength: 0.035,
 
   layerOpacity: 1,
   blurPx: 0,
