@@ -2,7 +2,7 @@ import { VISUAL, type RGB } from './config'
 import { cssRgb } from './palette'
 import type { VisualParams } from './visualParams'
 
-interface WarmBlob {
+interface Mass {
   ox: number
   oy: number
   radius: number
@@ -15,39 +15,23 @@ interface WarmBlob {
   seed: number
 }
 
-interface CoolDisc {
-  ox: number
-  oy: number
-  radius: number
-  ampX: number
-  ampY: number
-  speed: number
-  phase: number
-}
-
-interface OilCell {
-  parent: number
-  ox: number
-  oy: number
-  size: number
-  aspect: number
-  speed: number
-  phase: number
-  depth: number
-}
-
+/**
+ * 構図優先のリキッドライト。
+ * 左暖色 / 右寒色ディスク / 中央の柔らかい核 / 外周だけ床へ溶かす。
+ * 個別の泡円は描かない（不快・AIっぽさの主因だったため）。
+ */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly liquid: HTMLCanvasElement
   private readonly liquidCtx: CanvasRenderingContext2D
   private readonly floor: HTMLCanvasElement
+  private readonly grain: HTMLCanvasElement
   private width = 0
   private height = 0
   private time = 0
-  private warms: WarmBlob[] = []
-  private cools: CoolDisc[] = []
-  private cells: OilCell[] = []
+  private warms: Mass[] = []
+  private cools: Mass[] = []
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -59,6 +43,7 @@ export class AmberglowRenderer {
     if (!liquidCtx) throw new Error('liquid canvas failed')
     this.liquidCtx = liquidCtx
     this.floor = document.createElement('canvas')
+    this.grain = document.createElement('canvas')
     this.initEntities()
   }
 
@@ -75,6 +60,7 @@ export class AmberglowRenderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.liquidCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.buildFloor(width, height, dpr)
+    this.buildGrain(width, height, dpr)
   }
 
   update(dt: number, params: VisualParams): void {
@@ -84,32 +70,16 @@ export class AmberglowRenderer {
 
   private initEntities(): void {
     this.warms = [
-      mkWarm(0, 0.3, 0.42, 0.5, 0, 0.95),
-      mkWarm(1, 0.42, 0.36, 0.42, 1, 0.8),
-      mkWarm(2, 0.36, 0.55, 0.4, 0, 0.85),
-      mkWarm(3, 0.5, 0.48, 0.34, 1, 0.75),
-      mkWarm(4, 0.24, 0.34, 0.36, 0, 0.9),
-      mkWarm(5, 0.48, 0.6, 0.3, 1, 0.7),
+      mass(0, 0.3, 0.44, 0.52, 0, 1.0),
+      mass(1, 0.42, 0.38, 0.44, 1, 0.85),
+      mass(2, 0.34, 0.56, 0.4, 0, 0.9),
+      mass(3, 0.48, 0.5, 0.34, 1, 0.8),
+      mass(4, 0.24, 0.34, 0.36, 0, 0.95),
     ]
     this.cools = [
-      { ox: 0.74, oy: 0.4, radius: 0.36, ampX: 0.018, ampY: 0.016, speed: 0.1, phase: 0.8 },
-      { ox: 0.7, oy: 0.58, radius: 0.24, ampX: 0.012, ampY: 0.018, speed: 0.08, phase: 2.6 },
+      mass(10, 0.74, 0.4, 0.38, 2, 1.0),
+      mass(11, 0.7, 0.58, 0.26, 2, 0.9),
     ]
-    this.cells = Array.from({ length: VISUAL.cellCount }, (_, i) => {
-      const r = rnd(i + 50)
-      const rad = 0.15 + r() * 0.75
-      const ang = r() * Math.PI * 2
-      return {
-        parent: i % this.warms.length,
-        ox: Math.cos(ang) * rad,
-        oy: Math.sin(ang) * rad,
-        size: 0.01 + r() * 0.032,
-        aspect: 0.75 + r() * 0.5,
-        speed: 0.05 + r() * 0.08,
-        phase: r() * Math.PI * 2,
-        depth: 0.3 + r() * 0.55,
-      }
-    })
   }
 
   private paint(params: VisualParams): void {
@@ -122,63 +92,23 @@ export class AmberglowRenderer {
     ctx.drawImage(this.floor, 0, 0, width, height)
 
     resetLayer(liquidCtx, this.liquid, width)
-
-    // 暖色油膜（lighter しすぎると白飛びして細菌っぽくなるので抑える）
     liquidCtx.globalCompositeOperation = 'screen'
-    const centers: Array<{ x: number; y: number; r: number; aspect: number }> = []
-    for (const b of this.warms) {
-      const t = this.time * b.speed + b.phase
-      const x = width * (b.ox + Math.sin(t) * b.ampX)
-      const y = height * (b.oy + Math.cos(t * 0.9 + b.seed) * b.ampY)
-      const radius = short * b.radius * (0.97 + 0.03 * Math.sin(t * 0.4))
-      centers.push({ x, y, r: radius, aspect: b.aspect })
-      fillSoftBlob(
-        liquidCtx,
-        x,
-        y,
-        radius,
-        b.aspect,
-        colors[b.colorIndex],
-        colors[(b.colorIndex + 1) % colors.length],
-        VISUAL.warmAlpha * params.opacity,
-        t,
-      )
+
+    for (const m of this.warms) {
+      paintMass(liquidCtx, width, height, short, m, colors, VISUAL.warmAlpha * params.opacity, this.time)
+    }
+    for (const m of this.cools) {
+      paintMass(liquidCtx, width, height, short, m, colors, VISUAL.coolAlpha * params.opacity, this.time)
     }
 
-    // 寒色ディスク
-    liquidCtx.globalCompositeOperation = 'screen'
-    for (const d of this.cools) {
-      const t = this.time * d.speed + d.phase
-      const x = width * (d.ox + Math.sin(t) * d.ampX)
-      const y = height * (d.oy + Math.cos(t * 0.85) * d.ampY)
-      fillCool(liquidCtx, x, y, short * d.radius, colors[2], VISUAL.coolAlpha * params.opacity)
-    }
-
-    // 油セル：赤茶の輪＋薄い塗り（理想画左の油泡寄り）
-    liquidCtx.globalCompositeOperation = 'source-atop'
-    for (const cell of this.cells) {
-      const p = centers[cell.parent]
-      if (!p) continue
-      const bt = this.time * cell.speed + cell.phase
-      const x = p.x + p.r * 0.5 * (cell.ox + 0.03 * Math.sin(bt))
-      const y = p.y + p.r * p.aspect * 0.5 * (cell.oy + 0.03 * Math.cos(bt))
-      // 明るい核付近は避ける
-      const dx = (x - width * 0.4) / short
-      const dy = (y - height * 0.45) / short
-      if (dx * dx + dy * dy < 0.02) continue
-      fillOilCell(
-        liquidCtx,
-        x,
-        y,
-        short * cell.size,
-        cell.aspect,
-        cell.depth * VISUAL.cellAlpha,
-        bt,
-      )
-    }
+    // 内部テクスチャ：粗いノイズを multiply（円の列ではない）
+    liquidCtx.globalCompositeOperation = 'soft-light'
+    liquidCtx.globalAlpha = VISUAL.grainAlpha
+    liquidCtx.drawImage(this.grain, 0, 0, width, height)
+    liquidCtx.globalAlpha = 1
 
     liquidCtx.globalCompositeOperation = 'lighter'
-    fillSoftCore(liquidCtx, width, height, short, colors[3], this.time, VISUAL.coreGain)
+    paintCore(liquidCtx, width, height, short, colors[3], this.time, VISUAL.coreGain)
 
     applyFade(liquidCtx, width, height, short, VISUAL.fadeRadius)
 
@@ -199,57 +129,96 @@ export class AmberglowRenderer {
     const [br, bg, bb] = VISUAL.floorColor
     c.fillStyle = `rgb(${br},${bg},${bb})`
     c.fillRect(0, 0, pw, ph)
-    // 低周波のごく薄いムラのみ
-    const g = c.createRadialGradient(pw * 0.5, ph * 0.45, 0, pw * 0.5, ph * 0.45, pw * 0.7)
-    g.addColorStop(0, 'rgba(255,255,255,0.03)')
-    g.addColorStop(1, 'rgba(0,0,0,0.12)')
+    const g = c.createRadialGradient(pw * 0.5, ph * 0.48, 0, pw * 0.5, ph * 0.48, pw * 0.65)
+    g.addColorStop(0, 'rgba(255,255,255,0.025)')
+    g.addColorStop(1, 'rgba(0,0,0,0.18)')
     c.fillStyle = g
     c.fillRect(0, 0, pw, ph)
   }
+
+  private buildGrain(width: number, height: number, dpr: number): void {
+    const pw = Math.floor(width * dpr)
+    const ph = Math.floor(height * dpr)
+    this.grain.width = pw
+    this.grain.height = ph
+    const c = this.grain.getContext('2d')
+    if (!c) return
+    // 低解像のまだらを拡大 → 有機的なムラ（泡円ではない）
+    const sw = Math.max(48, Math.floor(width / 18))
+    const sh = Math.max(30, Math.floor(height / 18))
+    const small = document.createElement('canvas')
+    small.width = sw
+    small.height = sh
+    const s = small.getContext('2d')
+    if (!s) return
+    const img = s.createImageData(sw, sh)
+    const data = img.data
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const i = (y * sw + x) * 4
+        const n = hash2(x * 1.3, y * 1.1)
+        const v = Math.floor(40 + n * 180)
+        data[i] = v
+        data[i + 1] = Math.floor(v * 0.55)
+        data[i + 2] = Math.floor(v * 0.35)
+        data[i + 3] = 255
+      }
+    }
+    s.putImageData(img, 0, 0)
+    c.imageSmoothingEnabled = true
+    c.drawImage(small, 0, 0, pw, ph)
+  }
 }
 
-function mkWarm(
+function mass(
   i: number,
   ox: number,
   oy: number,
   radius: number,
   colorIndex: number,
   aspect: number,
-): WarmBlob {
-  const r = rnd(i + 1)
+): Mass {
+  const r = fract(Math.sin((i + 1) * 19.17) * 43758.5453)
+  const r2 = fract(Math.sin((i + 1) * 47.11) * 24634.917)
   return {
     ox,
     oy,
     radius,
     aspect,
-    ampX: 0.015 + r() * 0.02,
-    ampY: 0.012 + r() * 0.018,
-    speed: 0.1 + r() * 0.1,
-    phase: r() * Math.PI * 2,
+    ampX: 0.012 + r * 0.018,
+    ampY: 0.01 + r2 * 0.015,
+    speed: 0.09 + r * 0.09,
+    phase: r2 * Math.PI * 2,
     colorIndex,
-    seed: i * 8.3,
+    seed: i * 7.3,
   }
 }
 
-function fillSoftBlob(
+function paintMass(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  aspect: number,
-  c0: RGB,
-  c1: RGB,
+  width: number,
+  height: number,
+  short: number,
+  m: Mass,
+  colors: RGB[],
   alpha: number,
-  t: number,
+  time: number,
 ): void {
+  const t = time * m.speed + m.phase
+  const x = width * (m.ox + Math.sin(t) * m.ampX)
+  const y = height * (m.oy + Math.cos(t * 0.9 + m.seed) * m.ampY)
+  const radius = short * m.radius * (0.97 + 0.03 * Math.sin(t * 0.35))
+  const c0 = colors[m.colorIndex % colors.length]
+  const c1 = colors[(m.colorIndex + 1) % colors.length]
+
   ctx.save()
   ctx.translate(x, y)
-  ctx.rotate(Math.sin(t * 0.15) * 0.1)
-  ctx.scale(1.05, aspect)
-  const g = ctx.createRadialGradient(0, 0, radius * 0.05, 0, 0, radius)
-  g.addColorStop(0, cssRgb(lighten(c1, 0.15), alpha))
-  g.addColorStop(0.28, cssRgb(c0, alpha * 0.95))
-  g.addColorStop(0.62, cssRgb(c0, alpha * 0.42))
+  ctx.rotate(Math.sin(t * 0.14) * 0.1)
+  ctx.scale(1.05, m.aspect)
+  const g = ctx.createRadialGradient(0, 0, radius * 0.06, 0, 0, radius)
+  g.addColorStop(0, cssRgb(lighten(c1, 0.12), alpha))
+  g.addColorStop(0.3, cssRgb(c0, alpha * 0.92))
+  g.addColorStop(0.65, cssRgb(c0, alpha * 0.38))
   g.addColorStop(1, cssRgb(c0, 0))
   ctx.fillStyle = g
   ctx.beginPath()
@@ -258,51 +227,7 @@ function fillSoftBlob(
   ctx.restore()
 }
 
-function fillCool(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  color: RGB,
-  alpha: number,
-): void {
-  const g = ctx.createRadialGradient(x, y, radius * 0.1, x, y, radius)
-  g.addColorStop(0, cssRgb(lighten(color, 0.28), alpha * 0.85))
-  g.addColorStop(0.55, cssRgb(color, alpha * 0.4))
-  g.addColorStop(1, cssRgb(color, 0))
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, Math.PI * 2)
-  ctx.fill()
-}
-
-function fillOilCell(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  aspect: number,
-  alpha: number,
-  t: number,
-): void {
-  ctx.save()
-  ctx.translate(x, y)
-  ctx.rotate(t * 0.12)
-  ctx.scale(1, aspect)
-  // 内側の油泡：中は少し透け、縁が濃い赤茶
-  const g = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size)
-  g.addColorStop(0, `rgba(90, 25, 10, ${0.12 * alpha})`)
-  g.addColorStop(0.55, `rgba(60, 15, 6, ${0.2 * alpha})`)
-  g.addColorStop(0.82, `rgba(30, 8, 3, ${0.55 * alpha})`)
-  g.addColorStop(1, 'rgba(20, 5, 2, 0)')
-  ctx.fillStyle = g
-  ctx.beginPath()
-  ctx.arc(0, 0, size, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
-}
-
-function fillSoftCore(
+function paintCore(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
@@ -311,13 +236,13 @@ function fillSoftCore(
   time: number,
   gain: number,
 ): void {
-  const cx = width * (0.4 + 0.012 * Math.sin(time * 0.1))
-  const cy = height * (0.45 + 0.01 * Math.cos(time * 0.08))
-  const r = short * 0.16
+  const cx = width * (0.4 + 0.01 * Math.sin(time * 0.1))
+  const cy = height * (0.45 + 0.008 * Math.cos(time * 0.08))
+  const r = short * 0.17
   const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
-  g.addColorStop(0, cssRgb([255, 250, 230], 0.28 * gain))
-  g.addColorStop(0.35, cssRgb(lighten(color, 0.2), 0.14 * gain))
-  g.addColorStop(0.75, cssRgb(color, 0.04 * gain))
+  g.addColorStop(0, cssRgb([255, 248, 220], 0.32 * gain))
+  g.addColorStop(0.3, cssRgb(lighten(color, 0.2), 0.16 * gain))
+  g.addColorStop(0.7, cssRgb(color, 0.05 * gain))
   g.addColorStop(1, cssRgb(color, 0))
   ctx.fillStyle = g
   ctx.beginPath()
@@ -335,11 +260,11 @@ function applyFade(
   ctx.globalCompositeOperation = 'destination-in'
   ctx.save()
   ctx.translate(width * 0.5, height * 0.48)
-  ctx.scale(1.28, 0.88)
-  const fade = ctx.createRadialGradient(0, 0, short * 0.14, 0, 0, short * fadeRadius)
+  ctx.scale(1.3, 0.9)
+  const fade = ctx.createRadialGradient(0, 0, short * 0.16, 0, 0, short * fadeRadius)
   fade.addColorStop(0, 'rgba(0,0,0,1)')
-  fade.addColorStop(0.58, 'rgba(0,0,0,0.95)')
-  fade.addColorStop(0.84, 'rgba(0,0,0,0.28)')
+  fade.addColorStop(0.55, 'rgba(0,0,0,0.96)')
+  fade.addColorStop(0.82, 'rgba(0,0,0,0.3)')
   fade.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = fade
   ctx.beginPath()
@@ -367,14 +292,10 @@ function lighten(color: RGB, amount: number): RGB {
   ]
 }
 
-function rnd(seed: number): () => number {
-  let s = seed * 17.13 + 3.1
-  return () => {
-    s += 1
-    return fract(Math.sin(s * 12.9898) * 43758.5453)
-  }
-}
-
 function fract(n: number): number {
   return n - Math.floor(n)
+}
+
+function hash2(x: number, y: number): number {
+  return fract(Math.sin(x * 127.1 + y * 311.7) * 43758.5453)
 }
