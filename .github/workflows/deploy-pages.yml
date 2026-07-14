@@ -38,5 +38,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Ensure GitHub Pages is enabled
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            try {
+              await github.rest.repos.getPages({ owner, repo })
+              core.info('GitHub Pages already enabled')
+            } catch (error) {
+              if (error.status !== 404) throw error
+              core.info('Enabling GitHub Pages (workflow build)')
+              await github.rest.repos.createPagesSite({
+                owner,
+                repo,
+                build_type: 'workflow',
+              })
+            }
       - id: deployment
         uses: actions/deploy-pages@v4
