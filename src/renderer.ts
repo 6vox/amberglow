@@ -123,8 +123,8 @@ export class AmberglowRenderer {
 
     resetLayer(liquidCtx, this.liquid, width)
 
-    // 暖色油膜
-    liquidCtx.globalCompositeOperation = 'lighter'
+    // 暖色油膜（lighter しすぎると白飛びして細菌っぽくなるので抑える）
+    liquidCtx.globalCompositeOperation = 'screen'
     const centers: Array<{ x: number; y: number; r: number; aspect: number }> = []
     for (const b of this.warms) {
       const t = this.time * b.speed + b.phase
@@ -146,6 +146,7 @@ export class AmberglowRenderer {
     }
 
     // 寒色ディスク
+    liquidCtx.globalCompositeOperation = 'screen'
     for (const d of this.cools) {
       const t = this.time * d.speed + d.phase
       const x = width * (d.ox + Math.sin(t) * d.ampX)
@@ -153,15 +154,19 @@ export class AmberglowRenderer {
       fillCool(liquidCtx, x, y, short * d.radius, colors[2], VISUAL.coolAlpha * params.opacity)
     }
 
-    // 油の暗いセル：multiply で赤茶く染める（灰色の輪郭泡にしない）
-    liquidCtx.globalCompositeOperation = 'multiply'
+    // 油セル：赤茶の輪＋薄い塗り（理想画左の油泡寄り）
+    liquidCtx.globalCompositeOperation = 'source-atop'
     for (const cell of this.cells) {
       const p = centers[cell.parent]
       if (!p) continue
       const bt = this.time * cell.speed + cell.phase
-      const x = p.x + p.r * 0.48 * (cell.ox + 0.04 * Math.sin(bt))
-      const y = p.y + p.r * p.aspect * 0.48 * (cell.oy + 0.04 * Math.cos(bt))
-      fillOilStain(
+      const x = p.x + p.r * 0.5 * (cell.ox + 0.03 * Math.sin(bt))
+      const y = p.y + p.r * p.aspect * 0.5 * (cell.oy + 0.03 * Math.cos(bt))
+      // 明るい核付近は避ける
+      const dx = (x - width * 0.4) / short
+      const dy = (y - height * 0.45) / short
+      if (dx * dx + dy * dy < 0.02) continue
+      fillOilCell(
         liquidCtx,
         x,
         y,
@@ -172,7 +177,6 @@ export class AmberglowRenderer {
       )
     }
 
-    // 柔らかい核のみ（星型・直線放射なし）
     liquidCtx.globalCompositeOperation = 'lighter'
     fillSoftCore(liquidCtx, width, height, short, colors[3], this.time, VISUAL.coreGain)
 
@@ -272,7 +276,7 @@ function fillCool(
   ctx.fill()
 }
 
-function fillOilStain(
+function fillOilCell(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -283,13 +287,14 @@ function fillOilStain(
 ): void {
   ctx.save()
   ctx.translate(x, y)
-  ctx.rotate(t * 0.15)
+  ctx.rotate(t * 0.12)
   ctx.scale(1, aspect)
-  // 赤黒い染み。輪郭線や白いハイライトは付けない
-  const g = ctx.createRadialGradient(0, 0, size * 0.15, 0, 0, size)
-  g.addColorStop(0, `rgba(70, 18, 8, ${0.75 * alpha})`)
-  g.addColorStop(0.65, `rgba(45, 12, 6, ${0.4 * alpha})`)
-  g.addColorStop(1, 'rgba(20, 6, 3, 0)')
+  // 内側の油泡：中は少し透け、縁が濃い赤茶
+  const g = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size)
+  g.addColorStop(0, `rgba(90, 25, 10, ${0.12 * alpha})`)
+  g.addColorStop(0.55, `rgba(60, 15, 6, ${0.2 * alpha})`)
+  g.addColorStop(0.82, `rgba(30, 8, 3, ${0.55 * alpha})`)
+  g.addColorStop(1, 'rgba(20, 5, 2, 0)')
   ctx.fillStyle = g
   ctx.beginPath()
   ctx.arc(0, 0, size, 0, Math.PI * 2)
