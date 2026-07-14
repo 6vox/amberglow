@@ -29,20 +29,13 @@ interface OilCell {
   parent: number
   ox: number
   oy: number
-  radius: number
+  rx: number
+  ry: number
   speed: number
   phase: number
   depth: number
 }
 
-/**
- * 理想リファレンス寄せ:
- * - 暖色の油膜色面
- * - その上の暗い油セル（真円ハイライト泡ではない）
- * - 寒色の半透明ディスク
- * - 中心の柔らかい発光（幾何学的な放射は避ける）
- * - 外周だけ床へフェード
- */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
@@ -75,7 +68,6 @@ export class AmberglowRenderer {
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     this.width = width
     this.height = height
-
     for (const surface of [this.canvas, this.liquid]) {
       surface.width = Math.floor(width * dpr)
       surface.height = Math.floor(height * dpr)
@@ -93,45 +85,34 @@ export class AmberglowRenderer {
   }
 
   private initEntities(): void {
-    this.warms = Array.from({ length: VISUAL.warmBlobCount }, (_, i) => {
-      const r = rand(i, 1)
-      return {
-        ox: 0.28 + r(2) * 0.28,
-        oy: 0.35 + r(3) * 0.3,
-        radius: 0.34 + r(4) * 0.22,
-        aspect: 0.7 + r(5) * 0.45,
-        ampX: 0.03 + r(6) * 0.04,
-        ampY: 0.025 + r(7) * 0.035,
-        speed: 0.16 + r(8) * 0.18,
-        phase: r(9) * Math.PI * 2,
-        colorIndex: i % 2,
-        seed: i * 13.1,
-      }
-    })
+    // 左〜中央に暖色油膜を厚く
+    this.warms = [
+      blob(0, 0.32, 0.45, 0.48, 0, 0.9),
+      blob(1, 0.45, 0.38, 0.4, 1, 0.75),
+      blob(2, 0.38, 0.58, 0.36, 0, 0.8),
+      blob(3, 0.55, 0.5, 0.3, 1, 0.7),
+      blob(4, 0.28, 0.32, 0.34, 0, 0.85),
+    ]
 
-    this.cools = Array.from({ length: VISUAL.coolDiscCount }, (_, i) => {
-      const r = rand(i + 20, 2)
-      return {
-        ox: 0.62 + r(2) * 0.2,
-        oy: 0.4 + r(3) * 0.25,
-        radius: 0.28 + r(4) * 0.18,
-        ampX: 0.02 + r(5) * 0.03,
-        ampY: 0.02 + r(6) * 0.03,
-        speed: 0.12 + r(7) * 0.12,
-        phase: r(8) * Math.PI * 2,
-      }
-    })
+    this.cools = [
+      { ox: 0.72, oy: 0.42, radius: 0.34, ampX: 0.02, ampY: 0.02, speed: 0.11, phase: 1.2 },
+      { ox: 0.68, oy: 0.58, radius: 0.22, ampX: 0.015, ampY: 0.02, speed: 0.09, phase: 3.5 },
+    ]
 
     this.cells = Array.from({ length: VISUAL.cellCount }, (_, i) => {
       const r = rand(i + 40, 3)
+      // 中心ホットスポットを避け、親油膜の外周寄りに配置
+      const rad = 0.25 + r(2) * 0.7
+      const ang = r(3) * Math.PI * 2
       return {
-        parent: i % VISUAL.warmBlobCount,
-        ox: (r(2) - 0.5) * 1.1,
-        oy: (r(3) - 0.5) * 1.1,
-        radius: 0.008 + r(4) * 0.03,
-        speed: 0.08 + r(5) * 0.12,
-        phase: r(6) * Math.PI * 2,
-        depth: 0.35 + r(7) * 0.55,
+        parent: i % this.warms.length,
+        ox: Math.cos(ang) * rad,
+        oy: Math.sin(ang) * rad,
+        rx: 0.01 + r(4) * 0.028,
+        ry: 0.008 + r(5) * 0.024,
+        speed: 0.06 + r(6) * 0.1,
+        phase: r(7) * Math.PI * 2,
+        depth: 0.25 + r(8) * 0.5,
       }
     })
   }
@@ -140,8 +121,6 @@ export class AmberglowRenderer {
     const { ctx, liquidCtx, width, height } = this
     const short = Math.min(width, height)
     const colors = params.colors
-    const warmA = VISUAL.warmAlpha * params.opacity
-    const coolA = VISUAL.coolAlpha * params.opacity
 
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
@@ -149,46 +128,67 @@ export class AmberglowRenderer {
 
     resetLayer(liquidCtx, this.liquid, width)
 
-    // 1) 暖色油膜
     liquidCtx.globalCompositeOperation = 'lighter'
     const warmCenters: Array<{ x: number; y: number; r: number; aspect: number }> = []
-    for (const blob of this.warms) {
-      const t = this.time * blob.speed + blob.phase
-      const x = width * (blob.ox + Math.sin(t) * blob.ampX)
-      const y = height * (blob.oy + Math.cos(t * 0.9 + blob.seed) * blob.ampY)
-      const radius = short * blob.radius * (0.95 + 0.05 * Math.sin(t * 0.5))
-      warmCenters.push({ x, y, r: radius, aspect: blob.aspect })
-      const c0 = colors[blob.colorIndex % colors.length]
-      const c1 = colors[(blob.colorIndex + 1) % colors.length]
-      paintWarmOil(liquidCtx, x, y, radius, blob.aspect, c0, c1, warmA, t)
+
+    for (const b of this.warms) {
+      const t = this.time * b.speed + b.phase
+      const x = width * (b.ox + Math.sin(t) * b.ampX)
+      const y = height * (b.oy + Math.cos(t * 0.9 + b.seed) * b.ampY)
+      const radius = short * b.radius * (0.96 + 0.04 * Math.sin(t * 0.45))
+      warmCenters.push({ x, y, r: radius, aspect: b.aspect })
+      paintWarmOil(
+        liquidCtx,
+        x,
+        y,
+        radius,
+        b.aspect,
+        colors[b.colorIndex % colors.length],
+        colors[(b.colorIndex + 1) % colors.length],
+        VISUAL.warmAlpha * params.opacity,
+        t,
+      )
     }
 
-    // 2) 寒色ディスク
-    for (const disc of this.cools) {
-      const t = this.time * disc.speed + disc.phase
-      const x = width * (disc.ox + Math.sin(t) * disc.ampX)
-      const y = height * (disc.oy + Math.cos(t * 0.8) * disc.ampY)
-      const radius = short * disc.radius
-      paintCoolDisc(liquidCtx, x, y, radius, colors[2], coolA)
+    for (const d of this.cools) {
+      const t = this.time * d.speed + d.phase
+      const x = width * (d.ox + Math.sin(t) * d.ampX)
+      const y = height * (d.oy + Math.cos(t * 0.8) * d.ampY)
+      paintCoolDisc(
+        liquidCtx,
+        x,
+        y,
+        short * d.radius,
+        colors[2],
+        VISUAL.coolAlpha * params.opacity,
+      )
     }
 
-    // 3) 暗い油セル（ハイライト付きシャボンではない）
+    // 油膜上の暗い斑点（白コア周りを避け、輪郭も弱く）
     liquidCtx.globalCompositeOperation = 'source-atop'
     for (const cell of this.cells) {
       const parent = warmCenters[cell.parent]
       if (!parent) continue
       const bt = this.time * cell.speed + cell.phase
-      const x = parent.x + parent.r * (cell.ox * 0.55 + 0.04 * Math.sin(bt))
-      const y = parent.y + parent.r * parent.aspect * (cell.oy * 0.55 + 0.04 * Math.cos(bt))
-      const rr = short * cell.radius * (0.85 + 0.2 * cell.depth)
-      paintOilCell(liquidCtx, x, y, rr, cell.depth * VISUAL.cellAlpha)
+      const x = parent.x + parent.r * 0.42 * (cell.ox + 0.05 * Math.sin(bt))
+      const y = parent.y + parent.r * parent.aspect * 0.42 * (cell.oy + 0.05 * Math.cos(bt))
+      // 画面中央の核付近は描かない
+      const dx = (x - width * 0.42) / short
+      const dy = (y - height * 0.46) / short
+      if (dx * dx + dy * dy < 0.018) continue
+      paintOilCell(
+        liquidCtx,
+        x,
+        y,
+        short * cell.rx,
+        short * cell.ry,
+        cell.depth * VISUAL.cellAlpha,
+        bt,
+      )
     }
 
-    // 4) 中心の柔らかい発光（繊維はノイズで有機的に）
     liquidCtx.globalCompositeOperation = 'lighter'
     paintSoftCore(liquidCtx, width, height, short, colors[3], this.time, VISUAL.coreGain)
-
-    // 5) 外周フェード
     applyEllipticalFade(liquidCtx, width, height, short, VISUAL.fadeRadius)
 
     ctx.globalCompositeOperation = 'screen'
@@ -205,33 +205,52 @@ export class AmberglowRenderer {
     this.floor.height = ph
     const ctx = this.floor.getContext('2d')
     if (!ctx) return
-
     const [br, bg, bb] = VISUAL.floorColor
-    const scale = 4
-    const sw = Math.ceil(width / scale)
-    const sh = Math.ceil(height / scale)
-    const small = document.createElement('canvas')
-    small.width = sw
-    small.height = sh
-    const sctx = small.getContext('2d')
-    if (!sctx) return
-    const image = sctx.createImageData(sw, sh)
-    const data = image.data
+    ctx.fillStyle = `rgb(${br},${bg},${bb})`
+    ctx.fillRect(0, 0, pw, ph)
+    // ごく弱い低周波ムラだけ
     const strength = VISUAL.floorNoiseStrength
-    for (let y = 0; y < sh; y++) {
-      for (let x = 0; x < sw; x++) {
-        const i = (y * sw + x) * 4
-        const n = hash2(x * 0.8, y * 0.8)
-        const v = (n - 0.5) * 255 * strength
-        data[i] = clampByte(br + v)
-        data[i + 1] = clampByte(bg + v)
-        data[i + 2] = clampByte(bb + v)
-        data[i + 3] = 255
+    if (strength <= 0) return
+    const image = ctx.getImageData(0, 0, pw, ph)
+    const data = image.data
+    for (let y = 0; y < ph; y += 2) {
+      for (let x = 0; x < pw; x += 2) {
+        const n = (hash2(x * 0.02, y * 0.02) - 0.5) * 255 * strength
+        for (let dy = 0; dy < 2; dy++) {
+          for (let dx = 0; dx < 2; dx++) {
+            const i = ((y + dy) * pw + (x + dx)) * 4
+            data[i] = clampByte(br + n)
+            data[i + 1] = clampByte(bg + n)
+            data[i + 2] = clampByte(bb + n)
+            data[i + 3] = 255
+          }
+        }
       }
     }
-    sctx.putImageData(image, 0, 0)
-    ctx.imageSmoothingEnabled = true
-    ctx.drawImage(small, 0, 0, pw, ph)
+    ctx.putImageData(image, 0, 0)
+  }
+}
+
+function blob(
+  i: number,
+  ox: number,
+  oy: number,
+  radius: number,
+  colorIndex: number,
+  aspect: number,
+): WarmBlob {
+  const r = rand(i, 1)
+  return {
+    ox,
+    oy,
+    radius,
+    aspect,
+    ampX: 0.02 + r(2) * 0.025,
+    ampY: 0.015 + r(3) * 0.02,
+    speed: 0.12 + r(4) * 0.12,
+    phase: r(5) * Math.PI * 2,
+    colorIndex,
+    seed: i * 9.7,
   }
 }
 
@@ -248,12 +267,12 @@ function paintWarmOil(
 ): void {
   ctx.save()
   ctx.translate(x, y)
-  ctx.rotate(Math.sin(t * 0.2) * 0.15)
-  ctx.scale(1, aspect)
-  const g = ctx.createRadialGradient(0, 0, radius * 0.05, 0, 0, radius)
-  g.addColorStop(0, cssRgb(lighten(c1, 0.15), alpha))
-  g.addColorStop(0.35, cssRgb(c0, alpha * 0.9))
-  g.addColorStop(0.7, cssRgb(c0, alpha * 0.4))
+  ctx.rotate(Math.sin(t * 0.18) * 0.12)
+  ctx.scale(1.05, aspect)
+  const g = ctx.createRadialGradient(0, 0, radius * 0.04, 0, 0, radius)
+  g.addColorStop(0, cssRgb(lighten(c1, 0.2), alpha))
+  g.addColorStop(0.3, cssRgb(c0, alpha * 0.95))
+  g.addColorStop(0.65, cssRgb(c0, alpha * 0.45))
   g.addColorStop(1, cssRgb(c0, 0))
   ctx.fillStyle = g
   ctx.beginPath()
@@ -270,9 +289,9 @@ function paintCoolDisc(
   color: RGB,
   alpha: number,
 ): void {
-  const g = ctx.createRadialGradient(x, y, radius * 0.1, x, y, radius)
-  g.addColorStop(0, cssRgb(lighten(color, 0.25), alpha * 0.85))
-  g.addColorStop(0.55, cssRgb(color, alpha * 0.45))
+  const g = ctx.createRadialGradient(x, y, radius * 0.08, x, y, radius)
+  g.addColorStop(0, cssRgb(lighten(color, 0.3), alpha * 0.9))
+  g.addColorStop(0.5, cssRgb(color, alpha * 0.5))
   g.addColorStop(1, cssRgb(color, 0))
   ctx.fillStyle = g
   ctx.beginPath()
@@ -284,19 +303,26 @@ function paintOilCell(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  r: number,
+  rx: number,
+  ry: number,
   alpha: number,
+  t: number,
 ): void {
-  // 理想画の暗い斑点：縁だけ濃いフラットな油セル
-  const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r)
-  g.addColorStop(0, `rgba(25, 12, 8, ${0.15 * alpha})`)
-  g.addColorStop(0.55, `rgba(20, 10, 6, ${0.35 * alpha})`)
-  g.addColorStop(0.82, `rgba(8, 4, 2, ${0.7 * alpha})`)
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(t * 0.2)
+  ctx.scale(1, ry / Math.max(rx, 0.0001))
+  const r = rx
+  // 濃い斑点。白い縁取りやハイライトは付けない
+  const g = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r)
+  g.addColorStop(0, `rgba(40, 15, 8, ${0.55 * alpha})`)
+  g.addColorStop(0.7, `rgba(20, 8, 4, ${0.35 * alpha})`)
   g.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = g
   ctx.beginPath()
-  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.arc(0, 0, r, 0, Math.PI * 2)
   ctx.fill()
+  ctx.restore()
 }
 
 function paintSoftCore(
@@ -308,42 +334,40 @@ function paintSoftCore(
   time: number,
   gain: number,
 ): void {
-  const cx = width * (0.42 + 0.02 * Math.sin(time * 0.15))
-  const cy = height * (0.46 + 0.015 * Math.cos(time * 0.12))
-  const coreR = short * 0.18
+  const cx = width * (0.4 + 0.015 * Math.sin(time * 0.12))
+  const cy = height * (0.45 + 0.01 * Math.cos(time * 0.1))
+  const coreR = short * 0.14
 
-  // 柔らかい核
-  let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
-  g.addColorStop(0, cssRgb([255, 250, 230], 0.55 * gain))
-  g.addColorStop(0.25, cssRgb(lighten(color, 0.35), 0.28 * gain))
-  g.addColorStop(0.65, cssRgb(color, 0.08 * gain))
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
+  g.addColorStop(0, cssRgb([255, 248, 220], 0.35 * gain))
+  g.addColorStop(0.3, cssRgb(lighten(color, 0.25), 0.18 * gain))
+  g.addColorStop(0.7, cssRgb(color, 0.05 * gain))
   g.addColorStop(1, cssRgb(color, 0))
   ctx.fillStyle = g
   ctx.beginPath()
   ctx.arc(cx, cy, coreR, 0, Math.PI * 2)
   ctx.fill()
 
-  // 有機的なにじみ（短いストロークを散らす。直線放射はしない）
-  ctx.globalCompositeOperation = 'lighter'
-  for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2 + time * 0.05
-    const wobble = 0.7 + 0.3 * Math.sin(time * 0.4 + i * 1.7)
-    const len = short * (0.08 + 0.12 * hash2(i, 3)) * wobble
+  // 短い有機的なにじみだけ（直線放射はしない）
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + time * 0.04 + hash2(i, 1) * 0.4
+    const len = short * (0.06 + 0.1 * hash2(i, 2))
     const x2 = cx + Math.cos(a) * len
-    const y2 = cy + Math.sin(a) * len * 0.85
-    const mid = 0.35 + 0.3 * hash2(i, 5)
-    const mx = cx + (x2 - cx) * mid + (hash2(i, 7) - 0.5) * short * 0.03
-    const my = cy + (y2 - cy) * mid + (hash2(i, 8) - 0.5) * short * 0.03
+    const y2 = cy + Math.sin(a) * len * 0.8
     const grad = ctx.createLinearGradient(cx, cy, x2, y2)
-    grad.addColorStop(0, cssRgb([255, 245, 210], 0.12 * gain))
-    grad.addColorStop(0.5, cssRgb(color, 0.08 * gain))
+    grad.addColorStop(0, cssRgb([255, 240, 190], 0.07 * gain))
     grad.addColorStop(1, cssRgb(color, 0))
     ctx.strokeStyle = grad
-    ctx.lineWidth = short * (0.01 + 0.02 * hash2(i, 9))
+    ctx.lineWidth = short * (0.012 + 0.02 * hash2(i, 3))
     ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(cx, cy)
-    ctx.quadraticCurveTo(mx, my, x2, y2)
+    ctx.quadraticCurveTo(
+      cx + (x2 - cx) * 0.4 + (hash2(i, 4) - 0.5) * short * 0.04,
+      cy + (y2 - cy) * 0.4 + (hash2(i, 5) - 0.5) * short * 0.04,
+      x2,
+      y2,
+    )
     ctx.stroke()
   }
 }
@@ -358,11 +382,11 @@ function applyEllipticalFade(
   ctx.globalCompositeOperation = 'destination-in'
   ctx.save()
   ctx.translate(width * 0.5, height * 0.48)
-  ctx.scale(1.2, 0.84)
-  const fade = ctx.createRadialGradient(0, 0, short * 0.1, 0, 0, short * fadeRadius)
+  ctx.scale(1.25, 0.86)
+  const fade = ctx.createRadialGradient(0, 0, short * 0.12, 0, 0, short * fadeRadius)
   fade.addColorStop(0, 'rgba(0,0,0,1)')
-  fade.addColorStop(0.55, 'rgba(0,0,0,0.96)')
-  fade.addColorStop(0.82, 'rgba(0,0,0,0.35)')
+  fade.addColorStop(0.6, 'rgba(0,0,0,0.95)')
+  fade.addColorStop(0.85, 'rgba(0,0,0,0.3)')
   fade.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = fade
   ctx.beginPath()
@@ -378,8 +402,7 @@ function resetLayer(
 ): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  const dpr = canvas.width / width
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.setTransform(canvas.width / width, 0, 0, canvas.width / width, 0, 0)
 }
 
 function lighten(color: RGB, amount: number): RGB {
