@@ -1,6 +1,6 @@
 /**
- * AMBERGLOW — 理想寄せ調整中（時間帯固定）
- * 個別の泡円は一旦外し、大きな色面と外周フェードを優先。
+ * AMBERGLOW — 見た目 / 流体パラメータ
+ * いまは理想寄せのためパレット固定。
  */
 
 export type RGB = readonly [number, number, number]
@@ -11,11 +11,12 @@ export const LOCATION = {
   timezoneOffsetHours: 9,
 } as const
 
+/** 理想寄せ固定パレット（時間帯連動は後で戻す） */
 export const PALETTES = {
-  day: [[205, 40, 18], [235, 120, 28], [100, 160, 220], [255, 225, 140]] as const satisfies readonly RGB[],
-  evening: [[205, 40, 18], [235, 120, 28], [100, 160, 220], [255, 225, 140]] as const satisfies readonly RGB[],
-  sunset: [[205, 40, 18], [235, 120, 28], [100, 160, 220], [255, 225, 140]] as const satisfies readonly RGB[],
-  night: [[205, 40, 18], [235, 120, 28], [100, 160, 220], [255, 225, 140]] as const satisfies readonly RGB[],
+  day: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
+  evening: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
+  sunset: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
+  night: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
 } as const
 
 export const PHASE_HOURS = {
@@ -26,16 +27,26 @@ export const PHASE_HOURS = {
 } as const
 
 export const VISUAL = {
-  baseSpeed: 0.24,
-  speedStep: 0.08,
-  speedMin: 0.1,
-  speedMax: 1.6,
+  baseSpeed: 0.85,
+  speedStep: 0.1,
+  speedMin: 0.2,
+  speedMax: 2.2,
 
-  warmAlpha: 0.8,
-  coolAlpha: 0.7,
-  coreGain: 0.5,
-  liquidGain: 1.12,
-  grainAlpha: 0.1,
+  /** 流体グリッド解像度（大きいほど細かいが重い） */
+  fluidSize: 128,
+  /** 粘性（高いほどトロトロ） */
+  viscosity: 0.00012,
+  /** 染料の拡散 */
+  diffusion: 0.000018,
+  /** 染料の減衰 */
+  dissipation: 0.996,
+  /** 自動かくはんの強さ */
+  stirForce: 28,
+  /** 染料滴下の強さ */
+  dyeAmount: 0.55,
+  /** 表示の明るさ */
+  liquidGain: 1.15,
+  /** 外周フェード */
   fadeRadius: 0.9,
   floorColor: [14, 12, 10] as RGB,
 
