@@ -5,7 +5,6 @@
 
 export type RGB = readonly [number, number, number]
 
-/** 吹田市付近の緯度経度（日の入り計算用） */
 export const LOCATION = {
   latitude: 34.7904,
   longitude: 135.5079,
@@ -13,33 +12,33 @@ export const LOCATION = {
 } as const
 
 /**
- * 時刻連動パレット（昼 / 夕方前 / 日没 / 夜）
- * 暖色ブロック / 寒色ブロック / ハイライト が分かれやすい並び。
+ * 時刻連動パレット
+ * 宇宙っぽい紫を避け、プロジェクター染料（暖色＋寒色）寄りにする。
  */
 export const PALETTES = {
   day: [
-    [90, 170, 195],
-    [235, 240, 245],
-    [120, 185, 130],
-    [220, 200, 110],
+    [210, 220, 200],
+    [150, 190, 195],
+    [190, 200, 140],
+    [120, 160, 175],
   ] as const satisfies readonly RGB[],
   evening: [
-    [230, 150, 70],
-    [245, 210, 130],
-    [200, 90, 45],
-    [120, 150, 170],
+    [230, 170, 90],
+    [220, 120, 55],
+    [200, 190, 130],
+    [100, 140, 160],
   ] as const satisfies readonly RGB[],
   sunset: [
-    [235, 80, 35],
-    [245, 160, 50],
-    [70, 110, 190],
-    [200, 60, 120],
+    [220, 70, 35],
+    [235, 140, 45],
+    [80, 120, 180],
+    [200, 50, 40],
   ] as const satisfies readonly RGB[],
   night: [
-    [40, 60, 130],
-    [90, 45, 140],
-    [20, 70, 65],
-    [130, 35, 50],
+    [30, 50, 95],
+    [55, 40, 80],
+    [25, 70, 60],
+    [90, 35, 40],
   ] as const satisfies readonly RGB[],
 } as const
 
@@ -50,39 +49,29 @@ export const PHASE_HOURS = {
   nightStart: 1.2,
 } as const
 
-/** 描画・動きのデフォルト */
 export const VISUAL = {
-  baseSpeed: 0.5,
-  speedStep: 0.1,
-  speedMin: 0.15,
-  speedMax: 2.0,
+  baseSpeed: 0.42,
+  speedStep: 0.08,
+  speedMin: 0.12,
+  speedMax: 1.8,
 
-  /** 模様スケール（大きいほど細かい） */
-  patternScale: 2.1,
-  /** マーブル歪み */
-  warpStrength: 0.42,
-  /** 大きめ色面のスケール */
-  regionScale: 1.15,
-  /** 油泡の密度 */
-  bubbleScale: 9.5,
-  /** 泡のコントラスト */
-  bubbleContrast: 2.4,
-  /** 中心付近の発光 */
-  coreGain: 0.55,
+  /** 大きな油だまりの数 */
+  blobCount: 6,
+  /** 油だまりの大きさ（画面短辺比） */
+  blobSizeMin: 0.22,
+  blobSizeMax: 0.48,
+  /** 泡の密度 */
+  bubbleDensity: 28,
   /** 液面の明るさ */
-  liquidGain: 1.15,
-  /**
-   * 外周だけ床へ溶かす幅（UV 0–0.5 相当）。
-   * ここだけグラデーションし、中央の模様はぼかさない。
-   */
-  edgeFade: 0.18,
-  /** 外周での床の見え方 0–1 */
-  floorEdgeMix: 0.92,
-  /** 中央でもうっすら床を残す量 */
-  floorCenterMix: 0.12,
-  /** 床色 */
-  floorColor: [56, 53, 50] as RGB,
-  floorNoiseStrength: 0.15,
+  liquidGain: 0.95,
+  /** 外周を床へ溶かす幅（大きいほど枠が消える） */
+  edgeFade: 0.28,
+  /** 外周の床比率 */
+  floorEdgeMix: 1,
+  /** 中央でも床をわずかに残す */
+  floorCenterMix: 0.08,
+  floorColor: [42, 40, 38] as RGB,
+  floorNoiseStrength: 0.1,
 
   layerOpacity: 1,
   blurPx: 0,
