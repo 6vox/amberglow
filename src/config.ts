@@ -35,17 +35,19 @@ export const VISUAL = {
   /** 流体グリッド解像度（大きいほど細かいが重い） */
   fluidSize: 128,
   /** 粘性（高いほどトロトロ） */
-  viscosity: 0.00012,
+  viscosity: 0.0001,
   /** 染料の拡散 */
-  diffusion: 0.000018,
+  diffusion: 0.000012,
   /** 染料の減衰 */
-  dissipation: 0.996,
+  dissipation: 0.9985,
   /** 自動かくはんの強さ */
-  stirForce: 28,
+  stirForce: 34,
   /** 染料滴下の強さ */
-  dyeAmount: 0.55,
+  dyeAmount: 1.1,
   /** 表示の明るさ */
-  liquidGain: 1.15,
+  liquidGain: 1.35,
+  /** 拡大時のにじみ（px） */
+  upscaleBlur: 4,
   /** 外周フェード */
   fadeRadius: 0.9,
   floorColor: [14, 12, 10] as RGB,

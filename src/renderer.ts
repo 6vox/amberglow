@@ -104,11 +104,12 @@ export class AmberglowRenderer {
   }
 
   private seedInitialDye(): void {
-    // 最初から空にしない
-    this.sim.addDye(0.32, 0.45, 1.2, 0, 0.12)
-    this.sim.addDye(0.4, 0.52, 0.9, 1, 0.1)
-    this.sim.addDye(0.7, 0.48, 1.1, 2, 0.13)
-    this.sim.addForce(0.45, 0.48, 8, -4, 0.15)
+    this.sim.addDye(0.32, 0.45, 2.4, 0, 0.14)
+    this.sim.addDye(0.4, 0.52, 1.8, 1, 0.12)
+    this.sim.addDye(0.7, 0.48, 2.0, 2, 0.15)
+    this.sim.addDye(0.55, 0.4, 1.2, 1, 0.08)
+    this.sim.addForce(0.45, 0.48, 12, -6, 0.16)
+    this.sim.addForce(0.62, 0.5, -8, 5, 0.12)
   }
 
   private drive(dt: number): void {
@@ -179,11 +180,11 @@ export class AmberglowRenderer {
         g = g + (c3[1] - g) * bright * 0.25
         bl = bl + (c3[2] - bl) * bright * 0.25
 
-        const alpha = Math.min(255, dens * 160 * gain)
+        const alpha = Math.min(255, dens * 200 * gain)
         const p = (j * n + i) * 4
-        data[p] = clamp(r)
-        data[p + 1] = clamp(g)
-        data[p + 2] = clamp(bl)
+        data[p] = clamp(r * (0.85 + dens * 0.35))
+        data[p + 1] = clamp(g * (0.85 + dens * 0.35))
+        data[p + 2] = clamp(bl * (0.85 + dens * 0.35))
         data[p + 3] = alpha
       }
     }
@@ -206,10 +207,10 @@ export class AmberglowRenderer {
     const ry = height * VISUAL.fadeRadius * 0.42
     ctx.ellipse(width * 0.5, height * 0.48, rx, ry, 0, 0, Math.PI * 2)
     ctx.clip()
-    ctx.filter = 'blur(10px)'
+    ctx.filter = `blur(${VISUAL.upscaleBlur}px)`
     ctx.drawImage(this.fluidCanvas, 0, 0, width, height)
     ctx.filter = 'none'
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = 0.95
     ctx.drawImage(this.fluidCanvas, 0, 0, width, height)
     ctx.restore()
 
