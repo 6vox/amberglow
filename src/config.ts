@@ -31,14 +31,13 @@ export const VISUAL = {
   speedMin: 0.1,
   speedMax: 1.6,
 
-  warmAlpha: 0.75,
-  coolAlpha: 0.58,
-  coreGain: 0.42,
-  liquidGain: 1.08,
-  /** 暖色内部のごく弱いテクスチャ（円の列にはしない） */
-  grainAlpha: 0.12,
-  fadeRadius: 0.88,
-  floorColor: [16, 14, 12] as RGB,
+  warmAlpha: 0.8,
+  coolAlpha: 0.7,
+  coreGain: 0.5,
+  liquidGain: 1.12,
+  grainAlpha: 0.1,
+  fadeRadius: 0.9,
+  floorColor: [14, 12, 10] as RGB,
 
   layerOpacity: 1,
   blurPx: 0,

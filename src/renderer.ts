@@ -77,8 +77,8 @@ export class AmberglowRenderer {
       mass(4, 0.24, 0.34, 0.36, 0, 0.95),
     ]
     this.cools = [
-      mass(10, 0.74, 0.4, 0.38, 2, 1.0),
-      mass(11, 0.7, 0.58, 0.26, 2, 0.9),
+      mass(10, 0.76, 0.42, 0.42, 2, 1.05),
+      mass(11, 0.7, 0.56, 0.28, 2, 0.95),
     ]
   }
 
@@ -109,6 +109,9 @@ export class AmberglowRenderer {
 
     liquidCtx.globalCompositeOperation = 'lighter'
     paintCore(liquidCtx, width, height, short, colors[3], this.time, VISUAL.coreGain)
+    // 暖色側の小さな明るい核（理想画のホットスポット）
+    paintHotspot(liquidCtx, width * 0.34, height * 0.4, short * 0.08, colors[1], this.time, 0.22)
+    paintHotspot(liquidCtx, width * 0.46, height * 0.52, short * 0.06, colors[3], this.time + 2, 0.16)
 
     applyFade(liquidCtx, width, height, short, VISUAL.fadeRadius)
 
@@ -247,6 +250,27 @@ function paintCore(
   ctx.fillStyle = g
   ctx.beginPath()
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+function paintHotspot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  color: RGB,
+  time: number,
+  gain: number,
+): void {
+  const px = x + Math.sin(time * 0.13) * r * 0.15
+  const py = y + Math.cos(time * 0.11) * r * 0.12
+  const g = ctx.createRadialGradient(px, py, 0, px, py, r)
+  g.addColorStop(0, cssRgb([255, 250, 230], 0.4 * gain))
+  g.addColorStop(0.4, cssRgb(lighten(color, 0.25), 0.18 * gain))
+  g.addColorStop(1, cssRgb(color, 0))
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.arc(px, py, r, 0, Math.PI * 2)
   ctx.fill()
 }
 
