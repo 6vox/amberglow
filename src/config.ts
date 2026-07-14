@@ -14,39 +14,35 @@ export const LOCATION = {
 
 /**
  * 時刻連動パレット（昼 / 夕方前 / 日没 / 夜）
- * リキッドライトの染料っぽい彩度。床への染み込みは合成側で抑える。
+ * 暖色ブロック / 寒色ブロック / ハイライト が分かれやすい並び。
  */
 export const PALETTES = {
   day: [
-    [120, 190, 210],
-    [230, 235, 240],
-    [140, 200, 150],
-    [230, 210, 120],
+    [90, 170, 195],
+    [235, 240, 245],
+    [120, 185, 130],
+    [220, 200, 110],
   ] as const satisfies readonly RGB[],
   evening: [
-    [220, 190, 140],
-    [235, 160, 90],
-    [200, 120, 55],
-    [170, 100, 50],
+    [230, 150, 70],
+    [245, 210, 130],
+    [200, 90, 45],
+    [120, 150, 170],
   ] as const satisfies readonly RGB[],
   sunset: [
-    [240, 110, 40],
-    [220, 55, 35],
-    [230, 90, 130],
-    [130, 50, 160],
+    [235, 80, 35],
+    [245, 160, 50],
+    [70, 110, 190],
+    [200, 60, 120],
   ] as const satisfies readonly RGB[],
   night: [
-    [35, 55, 120],
-    [80, 50, 140],
-    [25, 80, 70],
-    [120, 30, 45],
+    [40, 60, 130],
+    [90, 45, 140],
+    [20, 70, 65],
+    [130, 35, 50],
   ] as const satisfies readonly RGB[],
 } as const
 
-/**
- * 日没基準のフェーズ境界（時間）。
- * sunsetOffsetHours = 現在時刻 − 日の入り時刻
- */
 export const PHASE_HOURS = {
   dayEnd: -2.5,
   eveningPeak: -1.0,
@@ -56,37 +52,39 @@ export const PHASE_HOURS = {
 
 /** 描画・動きのデフォルト */
 export const VISUAL = {
-  /** 基本の時間進行速度（1 = 標準） */
-  baseSpeed: 0.55,
+  baseSpeed: 0.5,
   speedStep: 0.1,
   speedMin: 0.15,
   speedMax: 2.0,
 
+  /** 模様スケール（大きいほど細かい） */
+  patternScale: 2.1,
+  /** マーブル歪み */
+  warpStrength: 0.42,
+  /** 大きめ色面のスケール */
+  regionScale: 1.15,
+  /** 油泡の密度 */
+  bubbleScale: 9.5,
+  /** 泡のコントラスト */
+  bubbleContrast: 2.4,
+  /** 中心付近の発光 */
+  coreGain: 0.55,
+  /** 液面の明るさ */
+  liquidGain: 1.15,
   /**
-   * 液面の見た目（WebGL）。
-   * 値を上げると模様が細かく・動きが速くなる。
+   * 外周だけ床へ溶かす幅（UV 0–0.5 相当）。
+   * ここだけグラデーションし、中央の模様はぼかさない。
    */
-  /** 全体スケール（大きいほど模様が細かい） */
-  patternScale: 2.4,
-  /** ドメインワープの強さ（マーブル感） */
-  warpStrength: 0.55,
-  /** 油滴セルの密度 */
-  cellScale: 4.2,
-  /** セル縁のシャープさ（高いほど境界が立つ） */
-  cellContrast: 1.35,
-  /** 色の混ざり幅 */
-  blendSoftness: 0.22,
-  /** 液面レイヤーの明るさ */
-  liquidGain: 1.05,
-  /** コンクリートを残す比率 0–1（高いほど床が目立つ） */
-  concreteMix: 0.38,
-  /** 床のベース色 */
-  floorColor: [52, 50, 47] as RGB,
-  /** 床ノイズ */
-  floorNoiseStrength: 0.14,
+  edgeFade: 0.18,
+  /** 外周での床の見え方 0–1 */
+  floorEdgeMix: 0.92,
+  /** 中央でもうっすら床を残す量 */
+  floorCenterMix: 0.12,
+  /** 床色 */
+  floorColor: [56, 53, 50] as RGB,
+  floorNoiseStrength: 0.15,
 
-  /** visualParams 互換用（WebGL では主に speed / colors / opacity を使用） */
-  layerOpacity: 0.9,
+  layerOpacity: 1,
   blurPx: 0,
   trailFade: 0,
 } as const
