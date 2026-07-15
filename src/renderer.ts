@@ -20,9 +20,24 @@ interface Dropper {
   radius: number
 }
 
+/** 流体染料とは別の飛沫／泡オブジェクト */
+interface SplashDrop {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  radius: number
+  life: number
+  maxLife: number
+  channel: 0 | 1 | 2
+  /** 0=塗りつぶし滴, 1=泡リング */
+  kind: 0 | 1
+}
+
 /**
  * 流体シミュレーション結果を床へ投影する。
  * VisualParams の speed / colors / opacity を参照（将来の音声連動用に分離）。
+ * 飛沫は流体染料をいじらず、別レイヤーの粒子として重ねる。
  */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
@@ -38,7 +53,8 @@ export class AmberglowRenderer {
   private time = 0
   private stirs: Stir[] = []
   private droppers: Dropper[] = []
-  private nextSplashAt = 4
+  private readonly drops: SplashDrop[] = []
+  private nextSplashAt = 3.5
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -79,6 +95,7 @@ export class AmberglowRenderer {
     this.time += dt * speed
     this.drive(dt * speed)
     this.maybeSplash()
+    this.updateDrops(dt * speed)
     const stepDt = Math.min(0.033, dt * speed)
     this.sim.step(
       stepDt,
@@ -86,32 +103,30 @@ export class AmberglowRenderer {
       VISUAL.diffusion,
       VISUAL.dissipation,
     )
-    this.sim.applyInterfaceTension(VISUAL.tensionStrength * stepDt * 60)
     this.paint(params)
   }
 
   private initActors(): void {
-    // ベースは遅い煙。かくはんは弱くゆっくり。
     this.stirs = [
-      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.11, speed: 0.07, force: 0.85 },
-      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.09, speed: -0.055, force: 0.7 },
-      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.07, speed: 0.045, force: 0.45 },
+      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.12, speed: 0.16, force: 1 },
+      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.1, speed: -0.13, force: 0.85 },
+      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.08, speed: 0.1, force: 0.55 },
     ]
     this.droppers = [
-      { x: 0.3, y: 0.42, channel: 0, period: 14, phase: 0.2, radius: 0.065 },
-      { x: 0.42, y: 0.55, channel: 1, period: 17, phase: 2.1, radius: 0.055 },
-      { x: 0.72, y: 0.45, channel: 2, period: 19, phase: 4.0, radius: 0.07 },
-      { x: 0.6, y: 0.58, channel: 2, period: 21, phase: 1.3, radius: 0.045 },
+      { x: 0.3, y: 0.42, channel: 0, period: 9.5, phase: 0.2, radius: 0.07 },
+      { x: 0.4, y: 0.55, channel: 1, period: 11.0, phase: 2.1, radius: 0.06 },
+      { x: 0.72, y: 0.45, channel: 2, period: 12.5, phase: 4.0, radius: 0.08 },
+      { x: 0.62, y: 0.58, channel: 2, period: 14.0, phase: 1.3, radius: 0.05 },
     ]
   }
 
   private seedInitialDye(): void {
-    this.sim.addDye(0.32, 0.45, 2.2, 0, 0.14)
-    this.sim.addDye(0.4, 0.52, 1.7, 1, 0.12)
-    this.sim.addDye(0.7, 0.48, 1.9, 2, 0.15)
-    this.sim.addDye(0.55, 0.4, 1.1, 1, 0.08)
-    this.sim.addForce(0.45, 0.48, 8, -4, 0.15)
-    this.sim.addForce(0.62, 0.5, -5, 3.5, 0.12)
+    this.sim.addDye(0.32, 0.45, 2.4, 0, 0.14)
+    this.sim.addDye(0.4, 0.52, 1.8, 1, 0.12)
+    this.sim.addDye(0.7, 0.48, 2.0, 2, 0.15)
+    this.sim.addDye(0.55, 0.4, 1.2, 1, 0.08)
+    this.sim.addForce(0.45, 0.48, 12, -6, 0.16)
+    this.sim.addForce(0.62, 0.5, -8, 5, 0.12)
   }
 
   private drive(dt: number): void {
@@ -127,14 +142,13 @@ export class AmberglowRenderer {
 
     for (const d of this.droppers) {
       const pulse = 0.5 + 0.5 * Math.sin(this.time * ((Math.PI * 2) / d.period) + d.phase)
-      // 閾値を上げて、ベース滴下は稀に
-      if (pulse > 0.9) {
-        const wobbleX = d.x + 0.02 * Math.sin(this.time * 0.22 + d.phase)
-        const wobbleY = d.y + 0.02 * Math.cos(this.time * 0.18 + d.phase)
+      if (pulse > 0.82) {
+        const wobbleX = d.x + 0.02 * Math.sin(this.time * 0.3 + d.phase)
+        const wobbleY = d.y + 0.02 * Math.cos(this.time * 0.25 + d.phase)
         this.sim.addDye(
           wobbleX,
           wobbleY,
-          VISUAL.dyeAmount * (pulse - 0.9) * 3.5,
+          VISUAL.dyeAmount * (pulse - 0.82) * 4,
           d.channel,
           d.radius,
         )
@@ -147,41 +161,119 @@ export class AmberglowRenderer {
     this.nextSplashAt = fromTime + VISUAL.splashIntervalMin + Math.random() * span
   }
 
-  /** ときどき飛沫バースト or 泡（穴） */
+  /** 流体とは別オブジェクトとして飛沫／泡を発生 */
   private maybeSplash(): void {
     if (this.time < this.nextSplashAt) return
     this.scheduleNextSplash(this.time)
 
     const cx = 0.28 + Math.random() * 0.44
-    const cy = 0.32 + Math.random() * 0.36
-
-    if (Math.random() < VISUAL.bubbleChance) {
-      // 泡: 染料を抜いて薄い穴を開け、外へわずかに押す
-      const r = 0.03 + Math.random() * 0.05
-      this.sim.clearDye(cx, cy, 1.2 + Math.random() * 1.4, r)
-      this.sim.addForce(cx, cy, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, r * 1.2)
-      // 周囲に細い縁色
-      const ringCh = Math.floor(Math.random() * 3) as 0 | 1 | 2
-      this.sim.addDye(cx + r * 0.7, cy, 0.6, ringCh, r * 0.35)
-      this.sim.addDye(cx - r * 0.5, cy + r * 0.4, 0.5, ringCh, r * 0.3)
-      return
-    }
-
+    const cy = 0.34 + Math.random() * 0.32
+    const asBubble = Math.random() < VISUAL.bubbleChance
     const count =
       VISUAL.splashDropletMin
       + Math.floor(Math.random() * (VISUAL.splashDropletMax - VISUAL.splashDropletMin + 1))
     const baseCh = Math.floor(Math.random() * 3) as 0 | 1 | 2
+
     for (let i = 0; i < count; i++) {
-      const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4
-      const dist = 0.01 + Math.random() * 0.045
-      const x = cx + Math.cos(ang) * dist
-      const y = cy + Math.sin(ang) * dist
-      const ch = (Math.random() < 0.7 ? baseCh : ((baseCh + 1 + (Math.random() < 0.5 ? 0 : 1)) % 3)) as 0 | 1 | 2
-      const rad = 0.012 + Math.random() * 0.028
-      this.sim.addDye(x, y, VISUAL.splashDye * (0.55 + Math.random() * 0.7), ch, rad)
-      const f = VISUAL.splashForce * (0.45 + Math.random() * 0.7)
-      this.sim.addForce(x, y, Math.cos(ang) * f, Math.sin(ang) * f, rad * 1.4)
+      const ang = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5
+      const speed =
+        VISUAL.splashSpeedMin
+        + Math.random() * (VISUAL.splashSpeedMax - VISUAL.splashSpeedMin)
+      const life =
+        VISUAL.splashLifeMin
+        + Math.random() * (VISUAL.splashLifeMax - VISUAL.splashLifeMin)
+      const radius =
+        VISUAL.splashRadiusMin
+        + Math.random() * (VISUAL.splashRadiusMax - VISUAL.splashRadiusMin)
+      const ch = (
+        Math.random() < 0.75
+          ? baseCh
+          : ((baseCh + 1 + (Math.random() < 0.5 ? 0 : 1)) % 3)
+      ) as 0 | 1 | 2
+
+      this.drops.push({
+        x: cx + Math.cos(ang) * 0.008,
+        y: cy + Math.sin(ang) * 0.008,
+        vx: Math.cos(ang) * speed * (asBubble ? 0.35 : 1),
+        vy: Math.sin(ang) * speed * (asBubble ? 0.35 : 1),
+        radius: asBubble ? radius * (1.2 + Math.random() * 0.8) : radius,
+        life,
+        maxLife: life,
+        channel: ch,
+        kind: asBubble ? 1 : 0,
+      })
     }
+  }
+
+  private updateDrops(dt: number): void {
+    const drag = Math.exp(-1.1 * dt)
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i]
+      d.x += d.vx * dt
+      d.y += d.vy * dt
+      d.vx *= drag
+      d.vy *= drag
+      // ごく弱い漂い（流体のゆらぎに寄せるが、染料には書き込まない）
+      d.vx += Math.sin(this.time * 0.7 + i) * 0.002 * dt
+      d.vy += Math.cos(this.time * 0.55 + i * 0.3) * 0.002 * dt
+      d.life -= dt
+      if (
+        d.life <= 0
+        || d.x < -0.1
+        || d.x > 1.1
+        || d.y < -0.1
+        || d.y > 1.1
+      ) {
+        this.drops.splice(i, 1)
+      }
+    }
+  }
+
+  private drawDrops(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    colors: VisualParams['colors'],
+    opacity: number,
+  ): void {
+    if (this.drops.length === 0) return
+    const scale = Math.min(width, height)
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    for (const d of this.drops) {
+      const t = Math.max(0, d.life / d.maxLife)
+      const fade = t * t * (3 - 2 * t)
+      const alpha = fade * 0.85 * opacity
+      if (alpha < 0.02) continue
+      const col = colors[d.channel]
+      const hi = colors[3]
+      const px = d.x * width
+      const py = d.y * height
+      const r = d.radius * scale
+      if (d.kind === 1) {
+        // 泡: 柔らかいリング
+        const g = ctx.createRadialGradient(px, py, r * 0.35, px, py, r)
+        g.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},0)`)
+        g.addColorStop(0.55, `rgba(${col[0]},${col[1]},${col[2]},${alpha * 0.15})`)
+        g.addColorStop(0.82, `rgba(${hi[0]},${hi[1]},${hi[2]},${alpha * 0.7})`)
+        g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`)
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(px, py, r, 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        // 滴: 芯＋にじみ
+        const g = ctx.createRadialGradient(px, py, 0, px, py, r)
+        g.addColorStop(0, `rgba(${hi[0]},${hi[1]},${hi[2]},${alpha})`)
+        g.addColorStop(0.35, `rgba(${col[0]},${col[1]},${col[2]},${alpha * 0.85})`)
+        g.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`)
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(px, py, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    ctx.restore()
   }
 
   private paint(params: VisualParams): void {
@@ -254,6 +346,9 @@ export class AmberglowRenderer {
     lctx.globalAlpha = 0.95
     lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
     lctx.globalAlpha = 1
+
+    // 飛沫は流体の上に別オブジェクトとして重ねる（染料フィールドは変更しない）
+    this.drawDrops(lctx, width, height, params.colors, params.opacity)
 
     this.applyEdgeFade(lctx, width, height, params.edgeFadePx)
 
