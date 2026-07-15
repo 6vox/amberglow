@@ -34,21 +34,21 @@ export const VISUAL = {
   speedMax: 2.0,
 
   /** 流体グリッド解像度（大きいほど細かいが重い。CPU Stam） */
-  fluidSize: 192,
+  fluidSize: 160,
   /** 粘性（高いほどトロトロ） */
-  viscosity: 0.00022,
+  viscosity: 0.00018,
   /** 染料の拡散 */
-  diffusion: 0.00002,
+  diffusion: 0.00001,
   /** 染料の減衰 */
-  dissipation: 0.9990,
+  dissipation: 0.9988,
   /** 自動かくはんの強さ */
-  stirForce: 10,
+  stirForce: 12,
   /** 染料滴下の強さ */
-  dyeAmount: 1.0,
+  dyeAmount: 1.15,
   /** 表示の明るさ */
-  liquidGain: 1.25,
-  /** 拡大時のにじみ（px）— アナログ感の要 */
-  upscaleBlur: 10,
+  liquidGain: 1.35,
+  /** 拡大時のにじみ（px）— Canvas 相当＋少しだけ */
+  upscaleBlur: 5,
   /**
    * 画面端からのフェード幅（px）。
    * 端は透明度100%（投影なし＝黒＝床）、内側へこの距離で不透明になる。

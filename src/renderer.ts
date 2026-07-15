@@ -121,26 +121,31 @@ export class AmberglowRenderer {
   }
 
   private initActors(): void {
+    // Canvas 版より少し広く sweep / 滴下して、色の重なりを増やす
     this.stirs = [
-      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.12, speed: 0.16, force: 1 },
-      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.1, speed: -0.13, force: 0.85 },
-      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.08, speed: 0.1, force: 0.55 },
+      { x: 0.32, y: 0.44, ang: 0.2, orbit: 0.16, speed: 0.16, force: 1 },
+      { x: 0.68, y: 0.52, ang: 2.4, orbit: 0.14, speed: -0.13, force: 0.9 },
+      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.12, speed: 0.11, force: 0.7 },
+      { x: 0.48, y: 0.58, ang: 3.5, orbit: 0.1, speed: -0.09, force: 0.55 },
     ]
     this.droppers = [
-      { x: 0.3, y: 0.42, channel: 0, period: 9.5, phase: 0.2, radius: 0.07 },
-      { x: 0.4, y: 0.55, channel: 1, period: 11.0, phase: 2.1, radius: 0.06 },
-      { x: 0.72, y: 0.45, channel: 2, period: 12.5, phase: 4.0, radius: 0.08 },
-      { x: 0.62, y: 0.58, channel: 2, period: 14.0, phase: 1.3, radius: 0.05 },
+      { x: 0.28, y: 0.4, channel: 0, period: 9.0, phase: 0.2, radius: 0.09 },
+      { x: 0.42, y: 0.56, channel: 1, period: 10.5, phase: 2.1, radius: 0.08 },
+      { x: 0.72, y: 0.44, channel: 2, period: 12.0, phase: 4.0, radius: 0.1 },
+      { x: 0.6, y: 0.6, channel: 2, period: 13.5, phase: 1.3, radius: 0.07 },
+      { x: 0.5, y: 0.36, channel: 1, period: 11.5, phase: 3.2, radius: 0.07 },
     ]
   }
 
   private seedInitialDye(): void {
-    this.sim.addDye(0.32, 0.45, 2.4, 0, 0.14)
-    this.sim.addDye(0.4, 0.52, 1.8, 1, 0.12)
-    this.sim.addDye(0.7, 0.48, 2.0, 2, 0.15)
-    this.sim.addDye(0.55, 0.4, 1.2, 1, 0.08)
-    this.sim.addForce(0.45, 0.48, 12, -6, 0.16)
-    this.sim.addForce(0.62, 0.5, -8, 5, 0.12)
+    this.sim.addDye(0.3, 0.44, 2.6, 0, 0.17)
+    this.sim.addDye(0.42, 0.54, 2.1, 1, 0.15)
+    this.sim.addDye(0.7, 0.48, 2.3, 2, 0.18)
+    this.sim.addDye(0.55, 0.38, 1.6, 1, 0.12)
+    this.sim.addDye(0.48, 0.58, 1.4, 0, 0.11)
+    this.sim.addForce(0.42, 0.48, 14, -7, 0.18)
+    this.sim.addForce(0.64, 0.52, -10, 6, 0.15)
+    this.sim.addForce(0.5, 0.4, 4, 10, 0.12)
   }
 
   private drive(dt: number): void {
