@@ -356,7 +356,6 @@ export class LiquidLightEffect implements Effect {
           continue
         }
 
-        const sum = dens
         // 優勢チャンネル寄りに（グラデのにじみ幅を抑える）
         const w0 = a * a
         const w1 = b * b
