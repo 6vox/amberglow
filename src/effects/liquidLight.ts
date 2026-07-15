@@ -168,11 +168,11 @@ export class LiquidLightEffect implements Effect {
     }
 
     for (const cell of this.cells) {
-      cell.ang += cell.spin * dt
-      const ox = Math.cos(cell.ang + cell.phase) * cell.orbit
-      const oy = Math.sin(cell.ang * 0.9) * cell.orbit * 0.85
-      cell.x = clampRange(cell.x * 0.998 + (0.5 + ox) * 0.002, 0.12, 0.88)
-      cell.y = clampRange(cell.y * 0.998 + (0.5 + oy) * 0.002, 0.14, 0.86)
+      cell.ang += cell.spin * dt * 0.55
+      const ox = Math.cos(cell.ang + cell.phase) * cell.orbit * 0.65
+      const oy = Math.sin(cell.ang * 0.9) * cell.orbit * 0.55
+      cell.x = clampRange(cell.x * 0.999 + (cell.x + ox * 0.02) * 0.001, 0.12, 0.88)
+      cell.y = clampRange(cell.y * 0.999 + (cell.y + oy * 0.02) * 0.001, 0.14, 0.86)
       for (const other of this.cells) {
         if (other === cell) continue
         const dx = cell.x - other.x
@@ -185,8 +185,9 @@ export class LiquidLightEffect implements Effect {
           cell.y += (dy / dist) * push
         }
       }
-      const breathe = 1 + Math.sin(this.time * cell.pulse + cell.phase) * 0.04
-      cell.radius = clampRange(cell.radius * 0.997 + (0.012 + (cell.depth * 0.03)) * 0.003 * breathe, 0.008, 0.055)
+      // 半径はほぼ固定（呼吸で輪郭が粗く這うのを抑える）
+      const breathe = 1 + Math.sin(this.time * cell.pulse * 0.5 + cell.phase) * 0.015
+      cell.radius = clampRange(cell.radius * 0.999 + cell.radius * breathe * 0.001, 0.01, 0.048)
     }
 
     for (let i = this.drips.length - 1; i >= 0; i--) {
@@ -315,7 +316,9 @@ export class LiquidLightEffect implements Effect {
           const d2 = dx * dx + dy * dy
           if (d2 > r2) continue
           const edge = Math.sqrt(d2) / r
-          const carve = cell.depth * Math.exp(-edge * edge * 2.8) * (1 - edge * 0.25)
+          // 穴は中心をしっかり抜き、縁だけ短く落とす（ぼやけた黒点を避ける）
+          const hard = Math.max(0, 1 - edge)
+          const carve = cell.depth * hard * hard * (edge < 0.85 ? 1 : (1 - edge) / 0.15)
           const idx = j * n + i
           this.thickness[0][idx] = Math.max(0, this.thickness[0][idx] - carve)
           this.thickness[1][idx] = Math.max(0, this.thickness[1][idx] - carve)
@@ -395,12 +398,16 @@ export class LiquidLightEffect implements Effect {
     lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     lctx.imageSmoothingEnabled = true
     lctx.imageSmoothingQuality = 'high'
-    lctx.filter = `blur(${LIQUID_LIGHT.upscaleBlur}px)`
-    lctx.drawImage(this.gridCanvas, 0, 0, width, height)
-    lctx.filter = 'none'
-    lctx.globalAlpha = 0.92
-    lctx.drawImage(this.gridCanvas, 0, 0, width, height)
+    // 本体はほぼシャープに置き、ごく弱いにじみだけ足す（穴が溶けないように）
     lctx.globalAlpha = 1
+    lctx.drawImage(this.gridCanvas, 0, 0, width, height)
+    if (LIQUID_LIGHT.upscaleBlur > 0) {
+      lctx.filter = `blur(${LIQUID_LIGHT.upscaleBlur}px)`
+      lctx.globalAlpha = 0.35
+      lctx.drawImage(this.gridCanvas, 0, 0, width, height)
+      lctx.filter = 'none'
+      lctx.globalAlpha = 1
+    }
 
     this.applyEdgeFade(lctx, width, height, params.edgeFadePx)
 

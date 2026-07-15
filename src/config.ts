@@ -67,8 +67,8 @@ export const VISUAL = {
  * 油膜の厚み・セル穴・透過光で、煙とは別系統の表現にする。
  */
 export const LIQUID_LIGHT = {
-  /** 内部グリッド（粗いほどブラウン管／アナログ寄り） */
-  gridSize: 112,
+  /** 内部グリッド（粗いほどブラウン管／アナログ寄り、細かすぎるとデジタル） */
+  gridSize: 160,
   /** 大きな油域の数 */
   lobeCount: 6,
   /** 常時いるセル穴の数 */
@@ -79,8 +79,8 @@ export const LIQUID_LIGHT = {
   thinGlow: 0.62,
   /** 表示ゲイン */
   gain: 1.25,
-  /** 拡大にじみ */
-  upscaleBlur: 3,
+  /** 拡大にじみ — セル穴を潰さないよう弱め */
+  upscaleBlur: 1,
   /** 飛沫（小さな滴）の間隔秒 */
   dripIntervalMin: 5,
   dripIntervalMax: 12,
