@@ -35,7 +35,19 @@
         step="0.01"
         value="0.22"
       />
-      <p class="debug-hint">↑↓ or slider · F fullscreen · D hide</p>
+      <div class="debug-row debug-row-spaced">
+        <label for="fade-slider">edgeFadePx</label>
+        <strong id="fade-value">100</strong>
+      </div>
+      <input
+        id="fade-slider"
+        type="range"
+        min="20"
+        max="240"
+        step="1"
+        value="100"
+      />
+      <p class="debug-hint">↑↓ speed · F fullscreen · D hide</p>
     </aside>
     <script type="module" src="/src/play/main.ts"></script>
   </body>

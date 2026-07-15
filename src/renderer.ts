@@ -32,6 +32,7 @@ export class AmberglowRenderer {
   private readonly floor: HTMLCanvasElement
   private readonly sim: FluidSim
   private readonly image: ImageData
+  private layer: HTMLCanvasElement | null = null
   private width = 0
   private height = 0
   private time = 0
@@ -75,7 +76,6 @@ export class AmberglowRenderer {
     const speed = Math.max(0.05, params.speed)
     this.time += dt * speed
     this.drive(dt * speed)
-    // 固定ステップで安定させる
     const steps = 1
     const stepDt = Math.min(0.033, dt * speed) / steps
     for (let i = 0; i < steps; i++) {
@@ -157,8 +157,8 @@ export class AmberglowRenderer {
         const b = Math.min(1.5, this.sim.d[1][idx])
         const c = Math.min(1.5, this.sim.d[2][idx])
         const dens = a + b + c
+        const p = (j * n + i) * 4
         if (dens < 0.002) {
-          const p = (j * n + i) * 4
           data[p] = 0
           data[p + 1] = 0
           data[p + 2] = 0
@@ -166,7 +166,6 @@ export class AmberglowRenderer {
           continue
         }
 
-        // チャンネルをパレット色へ
         let r = c0[0] * a + c1[0] * b + c2[0] * c
         let g = c0[1] * a + c1[1] * b + c2[1] * c
         let bl = c0[2] * a + c1[2] * b + c2[2] * c
@@ -174,14 +173,12 @@ export class AmberglowRenderer {
         r /= sum
         g /= sum
         bl /= sum
-        // 濃いところは少し明るく（ガラス越しのハイライト）
         const bright = Math.min(1, dens * 0.55)
         r = r + (c3[0] - r) * bright * 0.25
         g = g + (c3[1] - g) * bright * 0.25
         bl = bl + (c3[2] - bl) * bright * 0.25
 
         const alpha = Math.min(255, dens * 200 * gain)
-        const p = (j * n + i) * 4
         data[p] = clamp(r * (0.85 + dens * 0.35))
         data[p + 1] = clamp(g * (0.85 + dens * 0.35))
         data[p + 2] = clamp(bl * (0.85 + dens * 0.35))
@@ -191,11 +188,12 @@ export class AmberglowRenderer {
 
     this.fluidCtx.putImageData(this.image, 0, 0)
 
+    // プロジェクタ前提: 黒 = 投影なし = 床
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
-    ctx.drawImage(this.floor, 0, 0, width, height)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, width, height)
 
-    // 液面を一度オフスクリーンへ（外周だけ透明化）
     const layer = this.ensureLayer(width, height)
     const lctx = layer.getContext('2d')
     if (!lctx) return
@@ -212,27 +210,7 @@ export class AmberglowRenderer {
     lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
     lctx.globalAlpha = 1
 
-    // 中央は不透明、端に向けて床が透ける
-    lctx.globalCompositeOperation = 'destination-in'
-    const short = Math.min(width, height)
-    lctx.save()
-    lctx.translate(width * 0.5, height * 0.5)
-    lctx.scale(width / short, height / short)
-    const fade = lctx.createRadialGradient(
-      0,
-      0,
-      short * VISUAL.fadeInner,
-      0,
-      0,
-      short * VISUAL.fadeOuter,
-    )
-    fade.addColorStop(0, 'rgba(0,0,0,1)')
-    fade.addColorStop(0.55, 'rgba(0,0,0,1)')
-    fade.addColorStop(1, 'rgba(0,0,0,0)')
-    lctx.fillStyle = fade
-    lctx.fillRect(-width, -height, width * 2, height * 2)
-    lctx.restore()
-    lctx.globalCompositeOperation = 'source-over'
+    this.applyEdgeFade(lctx, width, height, params.edgeFadePx)
 
     ctx.globalCompositeOperation = 'screen'
     ctx.globalAlpha = 1
@@ -240,7 +218,51 @@ export class AmberglowRenderer {
     ctx.globalCompositeOperation = 'source-over'
   }
 
-  private layer: HTMLCanvasElement | null = null
+  /**
+   * 端からの距離でフェード。
+   * 端ピクセル = 透明度100%（黒）、edgeFadePx 内側 = 不透明。
+   */
+  private applyEdgeFade(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    fadePx: number,
+  ): void {
+    const band = Math.max(1, fadePx)
+    const sides: Array<{ g: CanvasGradient }> = [
+      { g: (() => {
+        const g = ctx.createLinearGradient(0, 0, band, 0)
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(1, 'rgba(0,0,0,1)')
+        return g
+      })() },
+      { g: (() => {
+        const g = ctx.createLinearGradient(width, 0, width - band, 0)
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(1, 'rgba(0,0,0,1)')
+        return g
+      })() },
+      { g: (() => {
+        const g = ctx.createLinearGradient(0, 0, 0, band)
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(1, 'rgba(0,0,0,1)')
+        return g
+      })() },
+      { g: (() => {
+        const g = ctx.createLinearGradient(0, height, 0, height - band)
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(1, 'rgba(0,0,0,1)')
+        return g
+      })() },
+    ]
+
+    for (const side of sides) {
+      ctx.globalCompositeOperation = 'destination-in'
+      ctx.fillStyle = side.g
+      ctx.fillRect(0, 0, width, height)
+    }
+    ctx.globalCompositeOperation = 'source-over'
+  }
 
   private ensureLayer(width: number, height: number): HTMLCanvasElement {
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -261,13 +283,7 @@ export class AmberglowRenderer {
     this.floor.height = ph
     const c = this.floor.getContext('2d')
     if (!c) return
-    const [br, bg, bb] = VISUAL.floorColor
-    c.fillStyle = `rgb(${br},${bg},${bb})`
-    c.fillRect(0, 0, pw, ph)
-    const g = c.createRadialGradient(pw * 0.5, ph * 0.48, 0, pw * 0.5, ph * 0.48, pw * 0.65)
-    g.addColorStop(0, 'rgba(255,255,255,0.03)')
-    g.addColorStop(1, 'rgba(0,0,0,0.2)')
-    c.fillStyle = g
+    c.fillStyle = '#000'
     c.fillRect(0, 0, pw, ph)
   }
 }

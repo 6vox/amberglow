@@ -50,13 +50,12 @@ export const VISUAL = {
   /** 拡大時のにじみ（px） */
   upscaleBlur: 4,
   /**
-   * 床へのフェード。
-   * inner まで不透明、outer で完全に床へ溶ける（画面短辺に対する比率）。
-   * 差が大きいほどフェード幅が広い。
+   * 画面端からのフェード幅（px）。
+   * 端は透明度100%（投影なし＝黒＝床）、内側へこの距離で不透明になる。
    */
-  fadeInner: 0.28,
-  fadeOuter: 0.88,
-  floorColor: [14, 12, 10] as RGB,
+  edgeFadePx: 100,
+  /** 投影なしの色（プロジェクタでは黒＝床） */
+  floorColor: [0, 0, 0] as RGB,
 
   layerOpacity: 1,
   blurPx: 0,

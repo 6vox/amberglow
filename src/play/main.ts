@@ -9,13 +9,25 @@ const helpEl = document.querySelector<HTMLElement>('#help')
 const debugEl = document.querySelector<HTMLElement>('#debug')
 const speedSlider = document.querySelector<HTMLInputElement>('#speed-slider')
 const speedValue = document.querySelector<HTMLElement>('#speed-value')
+const fadeSlider = document.querySelector<HTMLInputElement>('#fade-slider')
+const fadeValue = document.querySelector<HTMLElement>('#fade-value')
 
-if (!canvas || !helpEl || !debugEl || !speedSlider || !speedValue) {
+if (
+  !canvas
+  || !helpEl
+  || !debugEl
+  || !speedSlider
+  || !speedValue
+  || !fadeSlider
+  || !fadeValue
+) {
   throw new Error('Required DOM nodes missing')
 }
 
 const speedSliderEl = speedSlider
 const speedValueEl = speedValue
+const fadeSliderEl = fadeSlider
+const fadeValueEl = fadeValue
 
 const params = createVisualParams()
 const state: ControlState = {
@@ -33,6 +45,11 @@ function syncSpeedUi(speed: number): void {
   speedValueEl.textContent = speed.toFixed(2)
 }
 
+function syncFadeUi(px: number): void {
+  fadeSliderEl.value = String(px)
+  fadeValueEl.textContent = String(Math.round(px))
+}
+
 function resize(): void {
   renderer.resize(window.innerWidth, window.innerHeight)
 }
@@ -44,10 +61,16 @@ speedSliderEl.min = String(VISUAL.speedMin)
 speedSliderEl.max = String(VISUAL.speedMax)
 speedSliderEl.step = String(VISUAL.speedStep)
 syncSpeedUi(params.speed)
+syncFadeUi(params.edgeFadePx)
 
 speedSliderEl.addEventListener('input', () => {
   params.speed = Number(speedSliderEl.value)
   syncSpeedUi(params.speed)
+})
+
+fadeSliderEl.addEventListener('input', () => {
+  params.edgeFadePx = Number(fadeSliderEl.value)
+  syncFadeUi(params.edgeFadePx)
 })
 
 attachControls(params, state, {

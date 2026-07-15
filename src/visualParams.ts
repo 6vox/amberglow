@@ -14,6 +14,8 @@ export interface VisualParams {
   blur: number
   /** 残像フェード量 */
   trailFade: number
+  /** 端からのフェード幅 (px) */
+  edgeFadePx: number
   /** 現在の補間済みパレット色 */
   colors: RGB[]
   /**
@@ -32,6 +34,7 @@ export function createVisualParams(): VisualParams {
     opacity: VISUAL.layerOpacity,
     blur: VISUAL.blurPx,
     trailFade: VISUAL.trailFade,
+    edgeFadePx: VISUAL.edgeFadePx,
     colors: [...PALETTES.day],
     audioEnergy: 0,
     audioBass: 0,
