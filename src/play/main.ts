@@ -42,7 +42,7 @@ const params = createVisualParams()
 const state: ControlState = {
   // 見た目調整中は固定パレット（時間帯連動は後で戻す）
   paletteMode: 'sunset',
-  effectId: 'smoke',
+  effectId: 'liquidLight',
   helpVisible: false,
   debugVisible: true,
 }

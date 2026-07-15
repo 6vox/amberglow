@@ -20,7 +20,7 @@ export const EFFECT_META: Record<EffectId, EffectMeta> = {
   liquidLight: { id: 'liquidLight', label: 'リキッドライト', ready: true },
 }
 
-export const EFFECT_ORDER: EffectId[] = ['smoke', 'liquidLight']
+export const EFFECT_ORDER: EffectId[] = ['liquidLight', 'smoke']
 
 export function nextEffectId(current: EffectId): EffectId {
   const i = EFFECT_ORDER.indexOf(current)
