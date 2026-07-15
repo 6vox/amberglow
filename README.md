@@ -56,6 +56,23 @@ npm run build
 npx gh-pages -d dist
 ```
 
+## PR の見た目プレビュー（Netlify）
+
+本番は GitHub Pages のまま、Pull Request の見た目確認だけ Netlify Deploy Preview を使います。
+
+### 初回だけ（Netlify と GitHub を接続）
+
+1. [Netlify](https://app.netlify.com/start) で GitHub の `6vox/amberglow` を Import
+2. Build settings は `netlify.toml` をそのまま使う（上書き不要）
+3. Site settings → Build & deploy → Continuous Deployment で **Deploy Previews** が有効なことを確認
+4. Production の公開は GitHub Pages 側を使う（Netlify の production ビルドは `netlify.toml` でスキップ）
+
+### 使い方
+
+PR を開くと Netlify がプレビューをビルドし、PR にコメントで URL が付きます（例: `https://deploy-preview-4--….netlify.app/play/`）。
+
+ローカル起動なしで `/` と `/play/` の見た目を確認できます。
+
 ## キー操作（`/play/`）
 
 通常時は UI を出さず、映像のみを表示します。

@@ -1,0 +1,20 @@
+# Netlify — PR Deploy Preview 用
+# 本番公開は GitHub Pages（main）を使う。
+
+[build]
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# 本番ビルドはスキップ（GitHub Pages 側で公開）
+[context.production]
+  ignore = "exit 0"
+
+# Deploy Preview / branch deploy はルート配信（base = /）
+[context.deploy-preview.environment]
+  VITE_BASE = "/"
+
+[context.branch-deploy.environment]
+  VITE_BASE = "/"
