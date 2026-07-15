@@ -367,12 +367,19 @@ export class LiquidLightEffect implements Effect {
         g = g * body + c3[1] * transmit * thinGlow
         bl = bl * body + c3[2] * transmit * thinGlow
 
-        const edgeBoost = Math.min(1, dens * 1.8) * (1 - Math.min(1, dens / 1.6))
-        r += (c3[0] - r) * edgeBoost * 0.2
-        g += (c3[1] - g) * edgeBoost * 0.2
-        bl += (c3[2] - bl) * edgeBoost * 0.2
+        // 彩度を少し押し上げて投影っぽいビビッドさに
+        const avg = (r + g + bl) / 3
+        r = avg + (r - avg) * 1.35
+        g = avg + (g - avg) * 1.35
+        bl = avg + (bl - avg) * 1.35
 
-        const alpha = Math.min(255, body * 255 * gain)
+        // セル縁の明るいリング
+        const edgeBoost = Math.min(1, dens * 2.2) * (1 - Math.min(1, dens / 1.35))
+        r += (c3[0] - r) * edgeBoost * 0.45
+        g += (c3[1] - g) * edgeBoost * 0.45
+        bl += (c3[2] - bl) * edgeBoost * 0.45
+
+        const alpha = Math.min(255, Math.max(body, edgeBoost * 0.65) * 255 * gain)
         data[p] = clamp255(r)
         data[p + 1] = clamp255(g)
         data[p + 2] = clamp255(bl)
