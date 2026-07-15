@@ -27,23 +27,23 @@ export const PHASE_HOURS = {
 } as const
 
 export const VISUAL = {
-  baseSpeed: 0.85,
-  speedStep: 0.1,
-  speedMin: 0.2,
-  speedMax: 2.2,
+  baseSpeed: 0.4,
+  speedStep: 0.08,
+  speedMin: 0.15,
+  speedMax: 2.0,
 
   /** 流体グリッド解像度（大きいほど細かいが重い） */
   fluidSize: 128,
   /** 粘性（高いほどトロトロ） */
-  viscosity: 0.0001,
+  viscosity: 0.00016,
   /** 染料の拡散 */
-  diffusion: 0.000012,
+  diffusion: 0.00001,
   /** 染料の減衰 */
-  dissipation: 0.9985,
+  dissipation: 0.9988,
   /** 自動かくはんの強さ */
-  stirForce: 34,
+  stirForce: 16,
   /** 染料滴下の強さ */
-  dyeAmount: 1.1,
+  dyeAmount: 1.0,
   /** 表示の明るさ */
   liquidGain: 1.35,
   /** 拡大時のにじみ（px） */

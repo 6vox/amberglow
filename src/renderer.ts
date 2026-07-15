@@ -91,15 +91,15 @@ export class AmberglowRenderer {
 
   private initActors(): void {
     this.stirs = [
-      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.12, speed: 0.35, force: 1 },
-      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.1, speed: -0.28, force: 0.85 },
-      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.08, speed: 0.22, force: 0.55 },
+      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.12, speed: 0.16, force: 1 },
+      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.1, speed: -0.13, force: 0.85 },
+      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.08, speed: 0.1, force: 0.55 },
     ]
     this.droppers = [
-      { x: 0.3, y: 0.42, channel: 0, period: 5.5, phase: 0.2, radius: 0.07 },
-      { x: 0.4, y: 0.55, channel: 1, period: 6.5, phase: 2.1, radius: 0.06 },
-      { x: 0.72, y: 0.45, channel: 2, period: 7.2, phase: 4.0, radius: 0.08 },
-      { x: 0.62, y: 0.58, channel: 2, period: 8.0, phase: 1.3, radius: 0.05 },
+      { x: 0.3, y: 0.42, channel: 0, period: 9.5, phase: 0.2, radius: 0.07 },
+      { x: 0.4, y: 0.55, channel: 1, period: 11.0, phase: 2.1, radius: 0.06 },
+      { x: 0.72, y: 0.45, channel: 2, period: 12.5, phase: 4.0, radius: 0.08 },
+      { x: 0.62, y: 0.58, channel: 2, period: 14.0, phase: 1.3, radius: 0.05 },
     ]
   }
 
