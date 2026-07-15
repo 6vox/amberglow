@@ -1,5 +1,5 @@
 import { VISUAL } from './config'
-import { FluidSimGl } from './fluidGl'
+import { FluidSim } from './fluid2d'
 import type { VisualParams } from './visualParams'
 
 interface Stir {
@@ -20,19 +20,35 @@ interface Dropper {
   radius: number
 }
 
+type Program = {
+  program: WebGLProgram
+  uniforms: Record<string, WebGLUniformLocation | null>
+}
+
+type FBO = {
+  texture: WebGLTexture
+  framebuffer: WebGLFramebuffer
+  width: number
+  height: number
+}
+
 /**
- * WebGL2 版: 流体シミュレーション結果を床へ投影する。
- * VisualParams の speed / colors / opacity を参照（将来の音声連動用に分離）。
+ * WebGL 表示 + CPU Stam 流体。
+ * シミュレーションは気に入っている Canvas 版と同じ実装を使い、
+ * 拡大・にじみ・端フェードだけ GPU で行う（アナログ感を優先）。
  */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
   private readonly gl: WebGL2RenderingContext
-  private readonly sim: FluidSimGl
+  private readonly sim: FluidSim
+  private readonly image: ImageData
+  private readonly dyeTexture: WebGLTexture
   private readonly blit: () => void
-  private readonly copyProgram: WebGLProgram
-  private readonly uTexture: WebGLUniformLocation | null
-  private readonly uResolution: WebGLUniformLocation | null
-  private readonly uEdgeFadePx: WebGLUniformLocation | null
+  private readonly paintProgram: Program
+  private readonly blurProgram: Program
+  private readonly presentProgram: Program
+  private blurA: FBO | null = null
+  private blurB: FBO | null = null
   private width = 0
   private height = 0
   private time = 0
@@ -48,12 +64,32 @@ export class AmberglowRenderer {
     })
     if (!gl) throw new Error('WebGL2 not available')
     this.gl = gl
-    this.sim = new FluidSimGl(gl, VISUAL.fluidSize)
-    this.blit = createScreenBlit(gl)
-    this.copyProgram = compileCopy(gl)
-    this.uTexture = gl.getUniformLocation(this.copyProgram, 'uTexture')
-    this.uResolution = gl.getUniformLocation(this.copyProgram, 'uResolution')
-    this.uEdgeFadePx = gl.getUniformLocation(this.copyProgram, 'uEdgeFadePx')
+
+    this.sim = new FluidSim(VISUAL.fluidSize)
+    this.image = new ImageData(VISUAL.fluidSize, VISUAL.fluidSize)
+    this.dyeTexture = createTexture(gl)
+    gl.bindTexture(gl.TEXTURE_2D, this.dyeTexture)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      VISUAL.fluidSize,
+      VISUAL.fluidSize,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    )
+
+    this.blit = createBlit(gl)
+    this.paintProgram = compile(gl, VERT, PAINT_FRAG)
+    this.blurProgram = compile(gl, VERT, BLUR_FRAG)
+    this.presentProgram = compile(gl, VERT, PRESENT_FRAG)
+
     this.initActors()
     this.seedInitialDye()
   }
@@ -66,6 +102,7 @@ export class AmberglowRenderer {
     this.canvas.height = Math.floor(height * dpr)
     this.canvas.style.width = `${width}px`
     this.canvas.style.height = `${height}px`
+    this.ensureBlurTargets(this.canvas.width, this.canvas.height)
   }
 
   update(dt: number, params: VisualParams): void {
@@ -79,6 +116,7 @@ export class AmberglowRenderer {
       VISUAL.diffusion,
       VISUAL.dissipation,
     )
+    this.rasterize(params)
     this.paint(params)
   }
 
@@ -132,52 +170,152 @@ export class AmberglowRenderer {
     }
   }
 
+  /** Canvas 版と同じ色合成で ImageData → テクスチャへ */
+  private rasterize(params: VisualParams): void {
+    const n = this.sim.n
+    const colors = params.colors
+    const data = this.image.data
+    const gain = VISUAL.liquidGain * params.opacity
+    const c0 = colors[0]
+    const c1 = colors[1]
+    const c2 = colors[2]
+    const c3 = colors[3]
+
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const idx = this.sim.ix(i + 1, j + 1)
+        const a = Math.min(1.5, this.sim.d[0][idx])
+        const b = Math.min(1.5, this.sim.d[1][idx])
+        const c = Math.min(1.5, this.sim.d[2][idx])
+        const dens = a + b + c
+        const p = (j * n + i) * 4
+        if (dens < 0.002) {
+          data[p] = 0
+          data[p + 1] = 0
+          data[p + 2] = 0
+          data[p + 3] = 0
+          continue
+        }
+
+        let r = c0[0] * a + c1[0] * b + c2[0] * c
+        let g = c0[1] * a + c1[1] * b + c2[1] * c
+        let bl = c0[2] * a + c1[2] * b + c2[2] * c
+        const sum = a + b + c
+        r /= sum
+        g /= sum
+        bl /= sum
+        const bright = Math.min(1, dens * 0.55)
+        r = r + (c3[0] - r) * bright * 0.25
+        g = g + (c3[1] - g) * bright * 0.25
+        bl = bl + (c3[2] - bl) * bright * 0.25
+
+        const alpha = Math.min(255, dens * 200 * gain)
+        data[p] = clamp(r * (0.85 + dens * 0.35))
+        data[p + 1] = clamp(g * (0.85 + dens * 0.35))
+        data[p + 2] = clamp(bl * (0.85 + dens * 0.35))
+        data[p + 3] = alpha
+      }
+    }
+
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.dyeTexture)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1)
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      0,
+      0,
+      n,
+      n,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      data,
+    )
+  }
+
   private paint(params: VisualParams): void {
     const gl = this.gl
-    const gain = VISUAL.liquidGain * params.opacity
-    const tex = this.sim.renderDisplay(params.colors, gain)
+    if (!this.blurA || !this.blurB) return
 
+    // 1) dye を画面解像度へ（やわらかく）
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurA.framebuffer)
+    gl.viewport(0, 0, this.blurA.width, this.blurA.height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.paintProgram.program)
+    bindTexture(gl, this.dyeTexture, 0)
+    gl.uniform1i(this.paintProgram.uniforms.uTexture, 0)
+    this.blit()
+
+    // 2) 分離ぼかし（アナログのにじみ）
+    const blurPx = Math.max(1, VISUAL.upscaleBlur)
+    this.runBlur(this.blurA, this.blurB, blurPx, true)
+    this.runBlur(this.blurB, this.blurA, blurPx, false)
+
+    // 3) もう一段うすく重ねて Canvas 版の二重描画に近づける
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurB.framebuffer)
+    gl.viewport(0, 0, this.blurB.width, this.blurB.height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.useProgram(this.paintProgram.program)
+    bindTexture(gl, this.blurA.texture, 0)
+    gl.uniform1i(this.paintProgram.uniforms.uTexture, 0)
+    this.blit()
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.useProgram(this.paintProgram.program)
+    bindTexture(gl, this.dyeTexture, 0)
+    gl.uniform1i(this.paintProgram.uniforms.uTexture, 0)
+    // わずかにシャープ層
+    gl.blendColor(0, 0, 0, 0.55)
+    gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA)
+    this.blit()
+    gl.disable(gl.BLEND)
+
+    // 4) 端フェードして黒床へ
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
-
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-    gl.useProgram(this.copyProgram)
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, tex)
-    gl.uniform1i(this.uTexture, 0)
-    gl.uniform2f(this.uResolution, this.width, this.height)
-    gl.uniform1f(this.uEdgeFadePx, params.edgeFadePx)
+    gl.useProgram(this.presentProgram.program)
+    bindTexture(gl, this.blurB.texture, 0)
+    gl.uniform1i(this.presentProgram.uniforms.uTexture, 0)
+    gl.uniform2f(this.presentProgram.uniforms.uResolution, this.width, this.height)
+    gl.uniform1f(this.presentProgram.uniforms.uEdgeFadePx, params.edgeFadePx)
     this.blit()
     gl.disable(gl.BLEND)
   }
-}
 
-function createScreenBlit(gl: WebGL2RenderingContext): () => void {
-  const vao = gl.createVertexArray()
-  const buf = gl.createBuffer()
-  if (!vao || !buf) throw new Error('screen blit failed')
-  gl.bindVertexArray(vao)
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf)
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW)
-  const ibo = gl.createBuffer()
-  if (!ibo) throw new Error('screen index failed')
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW)
-  gl.enableVertexAttribArray(0)
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
-  gl.bindVertexArray(null)
-  return () => {
-    gl.bindVertexArray(vao)
-    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0)
-    gl.bindVertexArray(null)
+  private runBlur(src: FBO, dst: FBO, px: number, horizontal: boolean): void {
+    const gl = this.gl
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.framebuffer)
+    gl.viewport(0, 0, dst.width, dst.height)
+    gl.disable(gl.BLEND)
+    gl.useProgram(this.blurProgram.program)
+    bindTexture(gl, src.texture, 0)
+    gl.uniform1i(this.blurProgram.uniforms.uTexture, 0)
+    gl.uniform2f(
+      this.blurProgram.uniforms.uDirection,
+      horizontal ? px / dst.width : 0,
+      horizontal ? 0 : px / dst.height,
+    )
+    this.blit()
+  }
+
+  private ensureBlurTargets(w: number, h: number): void {
+    if (this.blurA && this.blurA.width === w && this.blurA.height === h) return
+    if (this.blurA) destroyFbo(this.gl, this.blurA)
+    if (this.blurB) destroyFbo(this.gl, this.blurB)
+    this.blurA = createFbo(this.gl, w, h)
+    this.blurB = createFbo(this.gl, w, h)
   }
 }
 
-function compileCopy(gl: WebGL2RenderingContext): WebGLProgram {
-  const vert = `#version 300 es
+const VERT = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;
 out vec2 vUv;
@@ -185,7 +323,32 @@ void main() {
   vUv = aPos * 0.5 + 0.5;
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`
-  const frag = `#version 300 es
+
+const PAINT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTexture;
+void main() {
+  fragColor = texture(uTexture, vUv);
+}`
+
+const BLUR_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTexture;
+uniform vec2 uDirection;
+void main() {
+  vec4 sum = texture(uTexture, vUv) * 0.227027;
+  sum += texture(uTexture, vUv + uDirection * 1.384615) * 0.316216;
+  sum += texture(uTexture, vUv - uDirection * 1.384615) * 0.316216;
+  sum += texture(uTexture, vUv + uDirection * 3.230769) * 0.070270;
+  sum += texture(uTexture, vUv - uDirection * 3.230769) * 0.070270;
+  fragColor = sum;
+}`
+
+const PRESENT_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
@@ -201,13 +364,40 @@ void main() {
   c.a *= smoothstep(0.0, max(uEdgeFadePx, 1.0), d);
   fragColor = c;
 }`
+
+function clamp(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)))
+}
+
+function createBlit(gl: WebGL2RenderingContext): () => void {
+  const vao = gl.createVertexArray()
+  const buf = gl.createBuffer()
+  if (!vao || !buf) throw new Error('blit failed')
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW)
+  const ibo = gl.createBuffer()
+  if (!ibo) throw new Error('ibo failed')
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+  gl.bindVertexArray(null)
+  return () => {
+    gl.bindVertexArray(vao)
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0)
+    gl.bindVertexArray(null)
+  }
+}
+
+function compile(gl: WebGL2RenderingContext, vertSrc: string, fragSrc: string): Program {
   const program = gl.createProgram()
-  if (!program) throw new Error('copy program failed')
+  if (!program) throw new Error('program failed')
   const vs = gl.createShader(gl.VERTEX_SHADER)
   const fs = gl.createShader(gl.FRAGMENT_SHADER)
-  if (!vs || !fs) throw new Error('copy shader failed')
-  gl.shaderSource(vs, vert)
-  gl.shaderSource(fs, frag)
+  if (!vs || !fs) throw new Error('shader failed')
+  gl.shaderSource(vs, vertSrc)
+  gl.shaderSource(fs, fragSrc)
   gl.compileShader(vs)
   gl.compileShader(fs)
   if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
@@ -220,7 +410,46 @@ void main() {
   gl.attachShader(program, fs)
   gl.linkProgram(program)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(gl.getProgramInfoLog(program) || 'copy link failed')
+    throw new Error(gl.getProgramInfoLog(program) || 'link failed')
   }
-  return program
+  const uniforms: Record<string, WebGLUniformLocation | null> = {}
+  const n = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(program, i)
+    if (!info) continue
+    uniforms[info.name] = gl.getUniformLocation(program, info.name)
+  }
+  return { program, uniforms }
+}
+
+function createTexture(gl: WebGL2RenderingContext): WebGLTexture {
+  const t = gl.createTexture()
+  if (!t) throw new Error('texture failed')
+  return t
+}
+
+function createFbo(gl: WebGL2RenderingContext, w: number, h: number): FBO {
+  const texture = createTexture(gl)
+  const framebuffer = gl.createFramebuffer()
+  if (!framebuffer) throw new Error('fbo failed')
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+  return { texture, framebuffer, width: w, height: h }
+}
+
+function destroyFbo(gl: WebGL2RenderingContext, fbo: FBO): void {
+  gl.deleteTexture(fbo.texture)
+  gl.deleteFramebuffer(fbo.framebuffer)
+}
+
+function bindTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, unit: number): void {
+  gl.activeTexture(gl.TEXTURE0 + unit)
+  gl.bindTexture(gl.TEXTURE_2D, texture)
 }

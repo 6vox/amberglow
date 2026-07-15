@@ -33,22 +33,22 @@ export const VISUAL = {
   speedMin: 0.01,
   speedMax: 2.0,
 
-  /** 流体グリッド解像度（WebGL 版。大きいほど細かい） */
-  fluidSize: 384,
+  /** 流体グリッド解像度（大きいほど細かいが重い。CPU Stam） */
+  fluidSize: 192,
   /** 粘性（高いほどトロトロ） */
-  viscosity: 0.00018,
+  viscosity: 0.00022,
   /** 染料の拡散 */
-  diffusion: 0.00001,
+  diffusion: 0.00002,
   /** 染料の減衰 */
-  dissipation: 0.9988,
+  dissipation: 0.9990,
   /** 自動かくはんの強さ */
-  stirForce: 12,
+  stirForce: 10,
   /** 染料滴下の強さ */
   dyeAmount: 1.0,
   /** 表示の明るさ */
-  liquidGain: 1.35,
-  /** 拡大時のにじみ（px） */
-  upscaleBlur: 4,
+  liquidGain: 1.25,
+  /** 拡大時のにじみ（px）— アナログ感の要 */
+  upscaleBlur: 10,
   /**
    * 画面端からのフェード幅（px）。
    * 端は透明度100%（投影なし＝黒＝床）、内側へこの距離で不透明になる。

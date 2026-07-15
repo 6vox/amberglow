@@ -201,11 +201,12 @@ export class FluidSimGl {
     const ext = gl.getExtension('EXT_color_buffer_float')
     if (!ext) throw new Error('EXT_color_buffer_float required')
 
+    // float/half テクスチャは LINEAR 非対応環境だと incomplete → サンプルが真っ黒になる。
+    // シミュレーション用は常に NEAREST。表示用 RGBA8 だけ LINEAR。
     const half = gl.getExtension('EXT_color_buffer_half_float')
-    const linear = gl.getExtension('OES_texture_half_float_linear')
     const internalFormat = half ? gl.RGBA16F : gl.RGBA32F
     const type = half ? gl.HALF_FLOAT : gl.FLOAT
-    const filter = linear || !half ? gl.LINEAR : gl.NEAREST
+    const filter = gl.NEAREST
 
     this.blit = createBlit(gl)
     this.programs = {
