@@ -5,6 +5,13 @@ body {
   height: 100%;
   overflow: hidden;
   background: #2f2d2b;
+}
+
+body.is-pointer-idle {
+  cursor: none;
+}
+
+body.is-pointer-idle .debug {
   cursor: none;
 }
 

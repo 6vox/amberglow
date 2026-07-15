@@ -68,6 +68,21 @@ attachControls(params, state, {
 helpEl.hidden = true
 debugEl.hidden = !state.debugVisible
 
+const POINTER_IDLE_MS = 2500
+let pointerIdleTimer = 0
+
+function showPointer(): void {
+  document.body.classList.remove('is-pointer-idle')
+  window.clearTimeout(pointerIdleTimer)
+  pointerIdleTimer = window.setTimeout(() => {
+    document.body.classList.add('is-pointer-idle')
+  }, POINTER_IDLE_MS)
+}
+
+window.addEventListener('pointermove', showPointer, { passive: true })
+window.addEventListener('pointerdown', showPointer, { passive: true })
+showPointer()
+
 let last = performance.now()
 
 function frame(now: number): void {
