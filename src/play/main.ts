@@ -1,7 +1,12 @@
 import { VISUAL } from '../config'
-import { attachControls, type ControlState } from '../controls'
+import { attachControls, effectLabel, type ControlState } from '../controls'
+import {
+  createEffect,
+  EFFECT_META,
+  type Effect,
+  type EffectId,
+} from '../effects'
 import { paletteFromTime } from '../palette'
-import { AmberglowRenderer } from '../renderer'
 import { createVisualParams, setPaletteColors } from '../visualParams'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')
@@ -11,6 +16,7 @@ const speedSlider = document.querySelector<HTMLInputElement>('#speed-slider')
 const speedValue = document.querySelector<HTMLElement>('#speed-value')
 const fadeSlider = document.querySelector<HTMLInputElement>('#fade-slider')
 const fadeValue = document.querySelector<HTMLElement>('#fade-value')
+const effectValue = document.querySelector<HTMLElement>('#effect-value')
 
 if (
   !canvas
@@ -20,25 +26,29 @@ if (
   || !speedValue
   || !fadeSlider
   || !fadeValue
+  || !effectValue
 ) {
   throw new Error('Required DOM nodes missing')
 }
 
+const stage = canvas
 const speedSliderEl = speedSlider
 const speedValueEl = speedValue
 const fadeSliderEl = fadeSlider
 const fadeValueEl = fadeValue
+const effectValueEl = effectValue
 
 const params = createVisualParams()
 const state: ControlState = {
   // 見た目調整中は固定パレット（時間帯連動は後で戻す）
   paletteMode: 'sunset',
+  effectId: 'smoke',
   helpVisible: false,
   debugVisible: true,
 }
 setPaletteColors(params, 'sunset')
 
-const renderer = new AmberglowRenderer(canvas)
+let effect: Effect = createEffect(state.effectId, stage)
 
 function syncSpeedUi(speed: number): void {
   speedSliderEl.value = String(speed)
@@ -50,12 +60,25 @@ function syncFadeUi(px: number): void {
   fadeValueEl.textContent = String(Math.round(px))
 }
 
+function syncEffectUi(id: EffectId): void {
+  effectValueEl.textContent = effectLabel(id)
+  document.title = `AMBERGLOW — ${EFFECT_META[id].label}`
+}
+
 function resize(): void {
-  renderer.resize(window.innerWidth, window.innerHeight)
+  effect.resize(window.innerWidth, window.innerHeight)
+}
+
+function setEffect(id: EffectId): void {
+  state.effectId = id
+  effect = createEffect(id, stage)
+  syncEffectUi(id)
+  resize()
 }
 
 resize()
 window.addEventListener('resize', resize)
+syncEffectUi(state.effectId)
 
 speedSliderEl.min = String(VISUAL.speedMin)
 speedSliderEl.max = String(VISUAL.speedMax)
@@ -85,6 +108,9 @@ attachControls(params, state, {
   },
   onModeChange() {
     // モード表示はヘルプ内の静的説明のみ。通常時は UI なし。
+  },
+  onEffectChange(id) {
+    setEffect(id)
   },
 })
 
@@ -116,7 +142,7 @@ function frame(now: number): void {
     params.colors = paletteFromTime(new Date())
   }
 
-  renderer.update(dt, params)
+  effect.update(dt, params)
   requestAnimationFrame(frame)
 }
 
