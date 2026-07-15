@@ -27,29 +27,34 @@ export const PHASE_HOURS = {
 } as const
 
 export const VISUAL = {
-  baseSpeed: 0.4,
-  speedStep: 0.08,
-  speedMin: 0.15,
+  /** 時間進行の基準速度（デバッグUIでも操作） */
+  baseSpeed: 0.22,
+  speedStep: 0.05,
+  speedMin: 0.08,
   speedMax: 2.0,
 
   /** 流体グリッド解像度（大きいほど細かいが重い） */
   fluidSize: 128,
   /** 粘性（高いほどトロトロ） */
-  viscosity: 0.00016,
+  viscosity: 0.00018,
   /** 染料の拡散 */
   diffusion: 0.00001,
   /** 染料の減衰 */
   dissipation: 0.9988,
   /** 自動かくはんの強さ */
-  stirForce: 16,
+  stirForce: 12,
   /** 染料滴下の強さ */
   dyeAmount: 1.0,
   /** 表示の明るさ */
   liquidGain: 1.35,
   /** 拡大時のにじみ（px） */
   upscaleBlur: 4,
-  /** 外周フェード */
-  fadeRadius: 0.9,
+  /**
+   * 床へのフェード。
+   * inner まで不透明、outer で完全に床へ溶ける（画面短辺に対する比率）。
+   */
+  fadeInner: 0.42,
+  fadeOuter: 0.72,
   floorColor: [14, 12, 10] as RGB,
 
   layerOpacity: 1,

@@ -195,40 +195,63 @@ export class AmberglowRenderer {
     ctx.globalAlpha = 1
     ctx.drawImage(this.floor, 0, 0, width, height)
 
-    // 低解像流体を拡大（にじみ）
-    ctx.save()
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
+    // 液面を一度オフスクリーンへ（外周だけ透明化）
+    const layer = this.ensureLayer(width, height)
+    const lctx = layer.getContext('2d')
+    if (!lctx) return
+    lctx.setTransform(1, 0, 0, 1, 0, 0)
+    lctx.clearRect(0, 0, layer.width, layer.height)
+    const dpr = layer.width / width
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    lctx.imageSmoothingEnabled = true
+    lctx.imageSmoothingQuality = 'high'
+    lctx.filter = `blur(${VISUAL.upscaleBlur}px)`
+    lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
+    lctx.filter = 'none'
+    lctx.globalAlpha = 0.95
+    lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
+    lctx.globalAlpha = 1
+
+    // 中央は不透明、端に向けて床が透ける
+    lctx.globalCompositeOperation = 'destination-in'
+    const short = Math.min(width, height)
+    lctx.save()
+    lctx.translate(width * 0.5, height * 0.5)
+    lctx.scale(width / short, height / short)
+    const fade = lctx.createRadialGradient(
+      0,
+      0,
+      short * VISUAL.fadeInner,
+      0,
+      0,
+      short * VISUAL.fadeOuter,
+    )
+    fade.addColorStop(0, 'rgba(0,0,0,1)')
+    fade.addColorStop(0.55, 'rgba(0,0,0,1)')
+    fade.addColorStop(1, 'rgba(0,0,0,0)')
+    lctx.fillStyle = fade
+    lctx.fillRect(-width, -height, width * 2, height * 2)
+    lctx.restore()
+    lctx.globalCompositeOperation = 'source-over'
+
     ctx.globalCompositeOperation = 'screen'
     ctx.globalAlpha = 1
-    // 楕円マスクで外周を床へ
-    ctx.beginPath()
-    const rx = width * VISUAL.fadeRadius * 0.55
-    const ry = height * VISUAL.fadeRadius * 0.42
-    ctx.ellipse(width * 0.5, height * 0.48, rx, ry, 0, 0, Math.PI * 2)
-    ctx.clip()
-    ctx.filter = `blur(${VISUAL.upscaleBlur}px)`
-    ctx.drawImage(this.fluidCanvas, 0, 0, width, height)
-    ctx.filter = 'none'
-    ctx.globalAlpha = 0.95
-    ctx.drawImage(this.fluidCanvas, 0, 0, width, height)
-    ctx.restore()
-
-    // 外周のソフトな落ち込み
-    const fade = ctx.createRadialGradient(
-      width * 0.5,
-      height * 0.48,
-      Math.min(width, height) * 0.18,
-      width * 0.5,
-      height * 0.48,
-      Math.min(width, height) * 0.62,
-    )
-    fade.addColorStop(0, 'rgba(0,0,0,0)')
-    fade.addColorStop(0.7, 'rgba(0,0,0,0)')
-    fade.addColorStop(1, `rgba(${VISUAL.floorColor[0]},${VISUAL.floorColor[1]},${VISUAL.floorColor[2]},0.92)`)
+    ctx.drawImage(layer, 0, 0, width, height)
     ctx.globalCompositeOperation = 'source-over'
-    ctx.fillStyle = fade
-    ctx.fillRect(0, 0, width, height)
+  }
+
+  private layer: HTMLCanvasElement | null = null
+
+  private ensureLayer(width: number, height: number): HTMLCanvasElement {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    if (!this.layer) this.layer = document.createElement('canvas')
+    const pw = Math.floor(width * dpr)
+    const ph = Math.floor(height * dpr)
+    if (this.layer.width !== pw || this.layer.height !== ph) {
+      this.layer.width = pw
+      this.layer.height = ph
+    }
+    return this.layer
   }
 
   private buildFloor(width: number, height: number, dpr: number): void {

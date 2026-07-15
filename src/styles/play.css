@@ -62,3 +62,55 @@ body {
 .help[hidden] {
   display: none !important;
 }
+
+.debug {
+  position: fixed;
+  right: 1rem;
+  top: 1rem;
+  z-index: 30;
+  width: min(16rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  color: rgba(245, 238, 228, 0.95);
+  background: rgba(10, 9, 8, 0.72);
+  backdrop-filter: blur(8px);
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 0.78rem;
+  cursor: auto;
+  pointer-events: auto;
+}
+
+.debug[hidden] {
+  display: none !important;
+}
+
+.debug-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.debug label {
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  opacity: 0.8;
+}
+
+#speed-value {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#speed-slider {
+  width: 100%;
+  accent-color: #e8c48a;
+  cursor: pointer;
+}
+
+.debug-hint {
+  margin: 0.55rem 0 0;
+  opacity: 0.55;
+  font-size: 0.7rem;
+}

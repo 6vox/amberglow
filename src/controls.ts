@@ -5,16 +5,19 @@ import { setPaletteColors } from './visualParams'
 export interface ControlState {
   paletteMode: PaletteMode
   helpVisible: boolean
+  debugVisible: boolean
 }
 
 export type ControlCallbacks = {
   onHelpToggle: (visible: boolean) => void
+  onDebugToggle: (visible: boolean) => void
+  onSpeedChange: (speed: number) => void
   onModeChange: (mode: PaletteMode) => void
 }
 
 /**
  * キーボード操作。
- * F フルスクリーン / 1–4 パレット / 0 自動 / ↑↓ 速度 / H ヘルプ
+ * F フルスクリーン / 1–4 パレット / 0 自動 / ↑↓ 速度 / D デバッグ / H ヘルプ
  */
 export function attachControls(
   params: VisualParams,
@@ -54,6 +57,7 @@ export function attachControls(
           VISUAL.speedMin,
           VISUAL.speedMax,
         )
+        callbacks.onSpeedChange(params.speed)
         break
       case 'ArrowDown':
         event.preventDefault()
@@ -62,6 +66,11 @@ export function attachControls(
           VISUAL.speedMin,
           VISUAL.speedMax,
         )
+        callbacks.onSpeedChange(params.speed)
+        break
+      case 'd':
+        state.debugVisible = !state.debugVisible
+        callbacks.onDebugToggle(state.debugVisible)
         break
       case 'h':
         state.helpVisible = !state.helpVisible
