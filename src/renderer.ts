@@ -38,6 +38,7 @@ export class AmberglowRenderer {
   private time = 0
   private stirs: Stir[] = []
   private droppers: Dropper[] = []
+  private nextSplashAt = 4
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -55,6 +56,7 @@ export class AmberglowRenderer {
     this.image = this.fluidCtx.createImageData(VISUAL.fluidSize, VISUAL.fluidSize)
     this.initActors()
     this.seedInitialDye()
+    this.scheduleNextSplash(this.time)
   }
 
   resize(width: number, height: number): void {
@@ -76,40 +78,40 @@ export class AmberglowRenderer {
     const speed = Math.max(0.05, params.speed)
     this.time += dt * speed
     this.drive(dt * speed)
-    const steps = 1
-    const stepDt = Math.min(0.033, dt * speed) / steps
-    for (let i = 0; i < steps; i++) {
-      this.sim.step(
-        stepDt,
-        VISUAL.viscosity,
-        VISUAL.diffusion,
-        VISUAL.dissipation,
-      )
-    }
+    this.maybeSplash()
+    const stepDt = Math.min(0.033, dt * speed)
+    this.sim.step(
+      stepDt,
+      VISUAL.viscosity,
+      VISUAL.diffusion,
+      VISUAL.dissipation,
+    )
+    this.sim.applyInterfaceTension(VISUAL.tensionStrength * stepDt * 60)
     this.paint(params)
   }
 
   private initActors(): void {
+    // ベースは遅い煙。かくはんは弱くゆっくり。
     this.stirs = [
-      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.12, speed: 0.16, force: 1 },
-      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.1, speed: -0.13, force: 0.85 },
-      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.08, speed: 0.1, force: 0.55 },
+      { x: 0.35, y: 0.45, ang: 0.2, orbit: 0.11, speed: 0.07, force: 0.85 },
+      { x: 0.65, y: 0.5, ang: 2.4, orbit: 0.09, speed: -0.055, force: 0.7 },
+      { x: 0.5, y: 0.4, ang: 1.1, orbit: 0.07, speed: 0.045, force: 0.45 },
     ]
     this.droppers = [
-      { x: 0.3, y: 0.42, channel: 0, period: 9.5, phase: 0.2, radius: 0.07 },
-      { x: 0.4, y: 0.55, channel: 1, period: 11.0, phase: 2.1, radius: 0.06 },
-      { x: 0.72, y: 0.45, channel: 2, period: 12.5, phase: 4.0, radius: 0.08 },
-      { x: 0.62, y: 0.58, channel: 2, period: 14.0, phase: 1.3, radius: 0.05 },
+      { x: 0.3, y: 0.42, channel: 0, period: 14, phase: 0.2, radius: 0.065 },
+      { x: 0.42, y: 0.55, channel: 1, period: 17, phase: 2.1, radius: 0.055 },
+      { x: 0.72, y: 0.45, channel: 2, period: 19, phase: 4.0, radius: 0.07 },
+      { x: 0.6, y: 0.58, channel: 2, period: 21, phase: 1.3, radius: 0.045 },
     ]
   }
 
   private seedInitialDye(): void {
-    this.sim.addDye(0.32, 0.45, 2.4, 0, 0.14)
-    this.sim.addDye(0.4, 0.52, 1.8, 1, 0.12)
-    this.sim.addDye(0.7, 0.48, 2.0, 2, 0.15)
-    this.sim.addDye(0.55, 0.4, 1.2, 1, 0.08)
-    this.sim.addForce(0.45, 0.48, 12, -6, 0.16)
-    this.sim.addForce(0.62, 0.5, -8, 5, 0.12)
+    this.sim.addDye(0.32, 0.45, 2.2, 0, 0.14)
+    this.sim.addDye(0.4, 0.52, 1.7, 1, 0.12)
+    this.sim.addDye(0.7, 0.48, 1.9, 2, 0.15)
+    this.sim.addDye(0.55, 0.4, 1.1, 1, 0.08)
+    this.sim.addForce(0.45, 0.48, 8, -4, 0.15)
+    this.sim.addForce(0.62, 0.5, -5, 3.5, 0.12)
   }
 
   private drive(dt: number): void {
@@ -125,17 +127,60 @@ export class AmberglowRenderer {
 
     for (const d of this.droppers) {
       const pulse = 0.5 + 0.5 * Math.sin(this.time * ((Math.PI * 2) / d.period) + d.phase)
-      if (pulse > 0.82) {
-        const wobbleX = d.x + 0.02 * Math.sin(this.time * 0.3 + d.phase)
-        const wobbleY = d.y + 0.02 * Math.cos(this.time * 0.25 + d.phase)
+      // 閾値を上げて、ベース滴下は稀に
+      if (pulse > 0.9) {
+        const wobbleX = d.x + 0.02 * Math.sin(this.time * 0.22 + d.phase)
+        const wobbleY = d.y + 0.02 * Math.cos(this.time * 0.18 + d.phase)
         this.sim.addDye(
           wobbleX,
           wobbleY,
-          VISUAL.dyeAmount * (pulse - 0.82) * 4,
+          VISUAL.dyeAmount * (pulse - 0.9) * 3.5,
           d.channel,
           d.radius,
         )
       }
+    }
+  }
+
+  private scheduleNextSplash(fromTime: number): void {
+    const span = VISUAL.splashIntervalMax - VISUAL.splashIntervalMin
+    this.nextSplashAt = fromTime + VISUAL.splashIntervalMin + Math.random() * span
+  }
+
+  /** ときどき飛沫バースト or 泡（穴） */
+  private maybeSplash(): void {
+    if (this.time < this.nextSplashAt) return
+    this.scheduleNextSplash(this.time)
+
+    const cx = 0.28 + Math.random() * 0.44
+    const cy = 0.32 + Math.random() * 0.36
+
+    if (Math.random() < VISUAL.bubbleChance) {
+      // 泡: 染料を抜いて薄い穴を開け、外へわずかに押す
+      const r = 0.03 + Math.random() * 0.05
+      this.sim.clearDye(cx, cy, 1.2 + Math.random() * 1.4, r)
+      this.sim.addForce(cx, cy, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, r * 1.2)
+      // 周囲に細い縁色
+      const ringCh = Math.floor(Math.random() * 3) as 0 | 1 | 2
+      this.sim.addDye(cx + r * 0.7, cy, 0.6, ringCh, r * 0.35)
+      this.sim.addDye(cx - r * 0.5, cy + r * 0.4, 0.5, ringCh, r * 0.3)
+      return
+    }
+
+    const count =
+      VISUAL.splashDropletMin
+      + Math.floor(Math.random() * (VISUAL.splashDropletMax - VISUAL.splashDropletMin + 1))
+    const baseCh = Math.floor(Math.random() * 3) as 0 | 1 | 2
+    for (let i = 0; i < count; i++) {
+      const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4
+      const dist = 0.01 + Math.random() * 0.045
+      const x = cx + Math.cos(ang) * dist
+      const y = cy + Math.sin(ang) * dist
+      const ch = (Math.random() < 0.7 ? baseCh : ((baseCh + 1 + (Math.random() < 0.5 ? 0 : 1)) % 3)) as 0 | 1 | 2
+      const rad = 0.012 + Math.random() * 0.028
+      this.sim.addDye(x, y, VISUAL.splashDye * (0.55 + Math.random() * 0.7), ch, rad)
+      const f = VISUAL.splashForce * (0.45 + Math.random() * 0.7)
+      this.sim.addForce(x, y, Math.cos(ang) * f, Math.sin(ang) * f, rad * 1.4)
     }
   }
 

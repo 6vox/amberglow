@@ -55,15 +55,71 @@ export class FluidSim {
     }
   }
 
+  /**
+   * 染料境界に沿って弱い外向き力を足す（界面張力の近似）。
+   * 全画面ノイズではなく、勾配がある境界付近だけ。
+   */
+  applyInterfaceTension(strength: number): void {
+    if (strength <= 0) return
+    const n = this.n
+    const d0 = this.d[0]
+    const d1 = this.d[1]
+    const d2 = this.d[2]
+    for (let j = 2; j <= n - 1; j++) {
+      for (let i = 2; i <= n - 1; i++) {
+        const c = this.ix(i, j)
+        const dens =
+          d0[c] + d1[c] + d2[c]
+        if (dens < 0.04 || dens > 1.4) continue
+
+        const L = d0[this.ix(i - 1, j)] + d1[this.ix(i - 1, j)] + d2[this.ix(i - 1, j)]
+        const R = d0[this.ix(i + 1, j)] + d1[this.ix(i + 1, j)] + d2[this.ix(i + 1, j)]
+        const B = d0[this.ix(i, j - 1)] + d1[this.ix(i, j - 1)] + d2[this.ix(i, j - 1)]
+        const T = d0[this.ix(i, j + 1)] + d1[this.ix(i, j + 1)] + d2[this.ix(i, j + 1)]
+        const gx = R - L
+        const gy = T - B
+        const mag2 = gx * gx + gy * gy
+        if (mag2 < 0.0025) continue
+        const inv = 1 / Math.sqrt(mag2)
+        // 境界の外側へ押し出す
+        const w = strength * Math.min(1, dens * 0.8)
+        this.u[c] += gx * inv * w
+        this.v[c] += gy * inv * w
+
+        // チャンネル同士が重なるところをわずかに分離
+        const mix = Math.min(d0[c], d1[c]) + Math.min(d1[c], d2[c]) + Math.min(d0[c], d2[c])
+        if (mix > 0.08) {
+          const sx = (d0[this.ix(i + 1, j)] - d0[this.ix(i - 1, j)])
+            - (d2[this.ix(i + 1, j)] - d2[this.ix(i - 1, j)])
+          const sy = (d0[this.ix(i, j + 1)] - d0[this.ix(i, j - 1)])
+            - (d2[this.ix(i, j + 1)] - d2[this.ix(i, j - 1)])
+          this.u[c] += sx * strength * 0.15
+          this.v[c] += sy * strength * 0.15
+        }
+      }
+    }
+  }
+
   /** 正規化座標 0–1 に力を加える */
   addForce(x: number, y: number, fx: number, fy: number, radius: number): void {
     splat(this.n, this.u, x, y, fx, radius)
     splat(this.n, this.v, x, y, fy, radius)
   }
 
-  /** 正規化座標 0–1 に染料を落とす */
+  /** 正規化座標 0–1 に染料を落とす（負値で穴＝泡） */
   addDye(x: number, y: number, amount: number, channel: 0 | 1 | 2, radius: number): void {
     splat(this.n, this.d[channel], x, y, amount, radius)
+    if (amount < 0) clampField(this.d[channel])
+  }
+
+  /** 全チャンネルから染料を抜く（泡・クリア） */
+  clearDye(x: number, y: number, amount: number, radius: number): void {
+    splat(this.n, this.d[0], x, y, -amount, radius)
+    splat(this.n, this.d[1], x, y, -amount, radius)
+    splat(this.n, this.d[2], x, y, -amount, radius)
+    clampField(this.d[0])
+    clampField(this.d[1])
+    clampField(this.d[2])
   }
 
   clearSources(): void {
@@ -100,6 +156,12 @@ function splat(
       const w = Math.exp((-d2 / r2) * 2.5)
       field[i + (n + 2) * j] += amount * w
     }
+  }
+}
+
+function clampField(field: Float32Array): void {
+  for (let i = 0; i < field.length; i++) {
+    if (field[i] < 0) field[i] = 0
   }
 }
 
