@@ -1,5 +1,5 @@
 import { VISUAL } from './config'
-import { FluidSim } from './fluid'
+import { FluidSimGl } from './fluidGl'
 import type { VisualParams } from './visualParams'
 
 interface Stir {
@@ -21,18 +21,18 @@ interface Dropper {
 }
 
 /**
- * 流体シミュレーション結果を床へ投影する。
+ * WebGL2 版: 流体シミュレーション結果を床へ投影する。
  * VisualParams の speed / colors / opacity を参照（将来の音声連動用に分離）。
  */
 export class AmberglowRenderer {
   private readonly canvas: HTMLCanvasElement
-  private readonly ctx: CanvasRenderingContext2D
-  private readonly fluidCanvas: HTMLCanvasElement
-  private readonly fluidCtx: CanvasRenderingContext2D
-  private readonly floor: HTMLCanvasElement
-  private readonly sim: FluidSim
-  private readonly image: ImageData
-  private layer: HTMLCanvasElement | null = null
+  private readonly gl: WebGL2RenderingContext
+  private readonly sim: FluidSimGl
+  private readonly blit: () => void
+  private readonly copyProgram: WebGLProgram
+  private readonly uTexture: WebGLUniformLocation | null
+  private readonly uResolution: WebGLUniformLocation | null
+  private readonly uEdgeFadePx: WebGLUniformLocation | null
   private width = 0
   private height = 0
   private time = 0
@@ -41,18 +41,19 @@ export class AmberglowRenderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
-    const ctx = canvas.getContext('2d', { alpha: false })
-    if (!ctx) throw new Error('Canvas 2D not available')
-    this.ctx = ctx
-
-    this.fluidCanvas = document.createElement('canvas')
-    const fluidCtx = this.fluidCanvas.getContext('2d')
-    if (!fluidCtx) throw new Error('fluid canvas failed')
-    this.fluidCtx = fluidCtx
-
-    this.floor = document.createElement('canvas')
-    this.sim = new FluidSim(VISUAL.fluidSize)
-    this.image = this.fluidCtx.createImageData(VISUAL.fluidSize, VISUAL.fluidSize)
+    const gl = canvas.getContext('webgl2', {
+      alpha: false,
+      antialias: false,
+      premultipliedAlpha: false,
+    })
+    if (!gl) throw new Error('WebGL2 not available')
+    this.gl = gl
+    this.sim = new FluidSimGl(gl, VISUAL.fluidSize)
+    this.blit = createScreenBlit(gl)
+    this.copyProgram = compileCopy(gl)
+    this.uTexture = gl.getUniformLocation(this.copyProgram, 'uTexture')
+    this.uResolution = gl.getUniformLocation(this.copyProgram, 'uResolution')
+    this.uEdgeFadePx = gl.getUniformLocation(this.copyProgram, 'uEdgeFadePx')
     this.initActors()
     this.seedInitialDye()
   }
@@ -65,27 +66,19 @@ export class AmberglowRenderer {
     this.canvas.height = Math.floor(height * dpr)
     this.canvas.style.width = `${width}px`
     this.canvas.style.height = `${height}px`
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-    this.fluidCanvas.width = VISUAL.fluidSize
-    this.fluidCanvas.height = VISUAL.fluidSize
-    this.buildFloor(width, height, dpr)
   }
 
   update(dt: number, params: VisualParams): void {
     const speed = Math.max(0.05, params.speed)
     this.time += dt * speed
     this.drive(dt * speed)
-    const steps = 1
-    const stepDt = Math.min(0.033, dt * speed) / steps
-    for (let i = 0; i < steps; i++) {
-      this.sim.step(
-        stepDt,
-        VISUAL.viscosity,
-        VISUAL.diffusion,
-        VISUAL.dissipation,
-      )
-    }
+    const stepDt = Math.min(0.033, dt * speed)
+    this.sim.step(
+      stepDt,
+      VISUAL.viscosity,
+      VISUAL.diffusion,
+      VISUAL.dissipation,
+    )
     this.paint(params)
   }
 
@@ -140,154 +133,94 @@ export class AmberglowRenderer {
   }
 
   private paint(params: VisualParams): void {
-    const { ctx, width, height } = this
-    const n = this.sim.n
-    const colors = params.colors
-    const data = this.image.data
+    const gl = this.gl
     const gain = VISUAL.liquidGain * params.opacity
-    const c0 = colors[0]
-    const c1 = colors[1]
-    const c2 = colors[2]
-    const c3 = colors[3]
+    const tex = this.sim.renderDisplay(params.colors, gain)
 
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const idx = this.sim.ix(i + 1, j + 1)
-        const a = Math.min(1.5, this.sim.d[0][idx])
-        const b = Math.min(1.5, this.sim.d[1][idx])
-        const c = Math.min(1.5, this.sim.d[2][idx])
-        const dens = a + b + c
-        const p = (j * n + i) * 4
-        if (dens < 0.002) {
-          data[p] = 0
-          data[p + 1] = 0
-          data[p + 2] = 0
-          data[p + 3] = 0
-          continue
-        }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+    gl.clearColor(0, 0, 0, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
 
-        let r = c0[0] * a + c1[0] * b + c2[0] * c
-        let g = c0[1] * a + c1[1] * b + c2[1] * c
-        let bl = c0[2] * a + c1[2] * b + c2[2] * c
-        const sum = a + b + c
-        r /= sum
-        g /= sum
-        bl /= sum
-        const bright = Math.min(1, dens * 0.55)
-        r = r + (c3[0] - r) * bright * 0.25
-        g = g + (c3[1] - g) * bright * 0.25
-        bl = bl + (c3[2] - bl) * bright * 0.25
-
-        const alpha = Math.min(255, dens * 200 * gain)
-        data[p] = clamp(r * (0.85 + dens * 0.35))
-        data[p + 1] = clamp(g * (0.85 + dens * 0.35))
-        data[p + 2] = clamp(bl * (0.85 + dens * 0.35))
-        data[p + 3] = alpha
-      }
-    }
-
-    this.fluidCtx.putImageData(this.image, 0, 0)
-
-    // プロジェクタ前提: 黒 = 投影なし = 床
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.globalAlpha = 1
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, width, height)
-
-    const layer = this.ensureLayer(width, height)
-    const lctx = layer.getContext('2d')
-    if (!lctx) return
-    lctx.setTransform(1, 0, 0, 1, 0, 0)
-    lctx.clearRect(0, 0, layer.width, layer.height)
-    const dpr = layer.width / width
-    lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    lctx.imageSmoothingEnabled = true
-    lctx.imageSmoothingQuality = 'high'
-    lctx.filter = `blur(${VISUAL.upscaleBlur}px)`
-    lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
-    lctx.filter = 'none'
-    lctx.globalAlpha = 0.95
-    lctx.drawImage(this.fluidCanvas, 0, 0, width, height)
-    lctx.globalAlpha = 1
-
-    this.applyEdgeFade(lctx, width, height, params.edgeFadePx)
-
-    ctx.globalCompositeOperation = 'screen'
-    ctx.globalAlpha = 1
-    ctx.drawImage(layer, 0, 0, width, height)
-    ctx.globalCompositeOperation = 'source-over'
-  }
-
-  /**
-   * 端からの距離でフェード。
-   * 端ピクセル = 透明度100%（黒）、edgeFadePx 内側 = 不透明。
-   */
-  private applyEdgeFade(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-    fadePx: number,
-  ): void {
-    const band = Math.max(1, fadePx)
-    const sides: Array<{ g: CanvasGradient }> = [
-      { g: (() => {
-        const g = ctx.createLinearGradient(0, 0, band, 0)
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(1, 'rgba(0,0,0,1)')
-        return g
-      })() },
-      { g: (() => {
-        const g = ctx.createLinearGradient(width, 0, width - band, 0)
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(1, 'rgba(0,0,0,1)')
-        return g
-      })() },
-      { g: (() => {
-        const g = ctx.createLinearGradient(0, 0, 0, band)
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(1, 'rgba(0,0,0,1)')
-        return g
-      })() },
-      { g: (() => {
-        const g = ctx.createLinearGradient(0, height, 0, height - band)
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(1, 'rgba(0,0,0,1)')
-        return g
-      })() },
-    ]
-
-    for (const side of sides) {
-      ctx.globalCompositeOperation = 'destination-in'
-      ctx.fillStyle = side.g
-      ctx.fillRect(0, 0, width, height)
-    }
-    ctx.globalCompositeOperation = 'source-over'
-  }
-
-  private ensureLayer(width: number, height: number): HTMLCanvasElement {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    if (!this.layer) this.layer = document.createElement('canvas')
-    const pw = Math.floor(width * dpr)
-    const ph = Math.floor(height * dpr)
-    if (this.layer.width !== pw || this.layer.height !== ph) {
-      this.layer.width = pw
-      this.layer.height = ph
-    }
-    return this.layer
-  }
-
-  private buildFloor(width: number, height: number, dpr: number): void {
-    const pw = Math.floor(width * dpr)
-    const ph = Math.floor(height * dpr)
-    this.floor.width = pw
-    this.floor.height = ph
-    const c = this.floor.getContext('2d')
-    if (!c) return
-    c.fillStyle = '#000'
-    c.fillRect(0, 0, pw, ph)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    gl.useProgram(this.copyProgram)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.uniform1i(this.uTexture, 0)
+    gl.uniform2f(this.uResolution, this.width, this.height)
+    gl.uniform1f(this.uEdgeFadePx, params.edgeFadePx)
+    this.blit()
+    gl.disable(gl.BLEND)
   }
 }
 
-function clamp(v: number): number {
-  return Math.max(0, Math.min(255, Math.round(v)))
+function createScreenBlit(gl: WebGL2RenderingContext): () => void {
+  const vao = gl.createVertexArray()
+  const buf = gl.createBuffer()
+  if (!vao || !buf) throw new Error('screen blit failed')
+  gl.bindVertexArray(vao)
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW)
+  const ibo = gl.createBuffer()
+  if (!ibo) throw new Error('screen index failed')
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+  gl.bindVertexArray(null)
+  return () => {
+    gl.bindVertexArray(vao)
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0)
+    gl.bindVertexArray(null)
+  }
+}
+
+function compileCopy(gl: WebGL2RenderingContext): WebGLProgram {
+  const vert = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`
+  const frag = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTexture;
+uniform vec2 uResolution;
+uniform float uEdgeFadePx;
+void main() {
+  vec4 c = texture(uTexture, vUv);
+  float d = min(
+    min(vUv.x, 1.0 - vUv.x) * uResolution.x,
+    min(vUv.y, 1.0 - vUv.y) * uResolution.y
+  );
+  c.a *= smoothstep(0.0, max(uEdgeFadePx, 1.0), d);
+  fragColor = c;
+}`
+  const program = gl.createProgram()
+  if (!program) throw new Error('copy program failed')
+  const vs = gl.createShader(gl.VERTEX_SHADER)
+  const fs = gl.createShader(gl.FRAGMENT_SHADER)
+  if (!vs || !fs) throw new Error('copy shader failed')
+  gl.shaderSource(vs, vert)
+  gl.shaderSource(fs, frag)
+  gl.compileShader(vs)
+  gl.compileShader(fs)
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(vs) || 'vert compile failed')
+  }
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(fs) || 'frag compile failed')
+  }
+  gl.attachShader(program, vs)
+  gl.attachShader(program, fs)
+  gl.linkProgram(program)
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || 'copy link failed')
+  }
+  return program
 }

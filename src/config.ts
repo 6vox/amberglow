@@ -33,8 +33,8 @@ export const VISUAL = {
   speedMin: 0.01,
   speedMax: 2.0,
 
-  /** 流体グリッド解像度（大きいほど細かいが重い） */
-  fluidSize: 128,
+  /** 流体グリッド解像度（WebGL 版。大きいほど細かい） */
+  fluidSize: 384,
   /** 粘性（高いほどトロトロ） */
   viscosity: 0.00018,
   /** 染料の拡散 */
