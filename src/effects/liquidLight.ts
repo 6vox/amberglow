@@ -2,48 +2,32 @@ import { LIQUID_LIGHT } from '../config'
 import type { VisualParams } from '../visualParams'
 import type { Effect } from './types'
 
-interface Lobe {
-  x: number
-  y: number
-  baseX: number
-  baseY: number
-  radius: number
-  channel: 0 | 1 | 2
-  ang: number
-  orbit: number
-  spin: number
-  pulse: number
-  phase: number
-  amount: number
-}
-
-interface Cell {
-  x: number
-  y: number
-  radius: number
-  ang: number
-  orbit: number
-  spin: number
-  phase: number
-  depth: number
-  pulse: number
-}
-
-interface Drip {
+/**
+ * 水面に浮かぶ一枚の油／絵の具。
+ * 体積(mass)を保ったまま広がり、薄い膜になる。
+ */
+interface OilPatch {
   x: number
   y: number
   vx: number
   vy: number
+  /** 体積に相当 */
+  mass: number
+  /** 現在の広がり半径（正規化座標） */
   radius: number
-  channel: 0 | 1 | 2
-  life: number
-  maxLife: number
-  amount: number
+  /** 0 | 1 の2色だけ */
+  channel: 0 | 1
+  age: number
 }
 
 /**
- * リキッドライトショー系。
- * 光の煙（Stam 染料）とは別物: 油膜の厚み＋セル穴＋下からの透過光。
+ * リキッドライト（作り直し）。
+ *
+ * 物理メタファー:
+ * - 黒い部分 = 水（油がないところ）
+ * - 色 = 水面を滑る油／絵の具
+ * - 広がりで薄くなり、別の油とぶつかると押し合い／同色はひっつく
+ * - 「黒い点オブジェクト」は作らない。隙間は空けた結果として出る
  */
 export class LiquidLightEffect implements Effect {
   readonly id = 'liquidLight' as const
@@ -52,15 +36,14 @@ export class LiquidLightEffect implements Effect {
   private readonly gridCanvas: HTMLCanvasElement
   private readonly gridCtx: CanvasRenderingContext2D
   private readonly image: ImageData
-  private readonly thickness: [Float32Array, Float32Array, Float32Array]
+  /** 2色の厚み場 */
+  private readonly film: [Float32Array, Float32Array]
   private layer: HTMLCanvasElement | null = null
   private width = 0
   private height = 0
   private time = 0
-  private lobes: Lobe[] = []
-  private cells: Cell[] = []
-  private drips: Drip[] = []
-  private nextDripAt = 2.5
+  private patches: OilPatch[] = []
+  private nextDripAt = 3
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -76,13 +59,9 @@ export class LiquidLightEffect implements Effect {
     if (!gridCtx) throw new Error('liquid grid canvas failed')
     this.gridCtx = gridCtx
     this.image = gridCtx.createImageData(n, n)
-    this.thickness = [
-      new Float32Array(n * n),
-      new Float32Array(n * n),
-      new Float32Array(n * n),
-    ]
+    this.film = [new Float32Array(n * n), new Float32Array(n * n)]
 
-    this.initFilm()
+    this.seedPatches()
   }
 
   resize(width: number, height: number): void {
@@ -98,107 +77,108 @@ export class LiquidLightEffect implements Effect {
 
   update(dt: number, params: VisualParams): void {
     const speed = Math.max(0.04, params.speed)
-    this.time += dt * speed
-    this.stepActors(dt * speed)
+    const step = dt * speed
+    this.time += step
+    this.stepPatches(step)
     this.maybeDrip()
-    this.rebuildThickness()
+    this.rebuildFilm()
     this.rasterize(params)
     this.present(params)
   }
 
-  private initFilm(): void {
-    const lobeSeeds: Array<{ x: number; y: number; ch: 0 | 1 | 2; r: number }> = [
-      { x: 0.42, y: 0.46, ch: 0, r: 0.22 },
-      { x: 0.58, y: 0.5, ch: 1, r: 0.2 },
-      { x: 0.5, y: 0.4, ch: 2, r: 0.18 },
-      { x: 0.34, y: 0.55, ch: 1, r: 0.15 },
-      { x: 0.66, y: 0.42, ch: 0, r: 0.16 },
-      { x: 0.52, y: 0.6, ch: 2, r: 0.14 },
-    ]
-    this.lobes = lobeSeeds.slice(0, LIQUID_LIGHT.lobeCount).map((s, i) => ({
-      x: s.x,
-      y: s.y,
-      baseX: s.x,
-      baseY: s.y,
-      radius: s.r,
-      channel: s.ch,
-      ang: i * 1.7,
-      orbit: 0.03 + (i % 3) * 0.012,
-      spin: 0.08 + (i % 4) * 0.03,
-      pulse: 0.35 + (i % 3) * 0.15,
-      phase: i * 0.9,
-      amount: 0.85 + (i % 3) * 0.12,
-    }))
-
-    this.cells = []
-    for (let i = 0; i < LIQUID_LIGHT.cellCount; i++) {
-      this.cells.push({
-        x: 0.22 + Math.random() * 0.56,
-        y: 0.24 + Math.random() * 0.52,
-        radius: 0.012 + Math.random() * 0.038,
-        ang: Math.random() * Math.PI * 2,
-        orbit: 0.01 + Math.random() * 0.04,
-        spin: 0.05 + Math.random() * 0.12,
-        phase: Math.random() * Math.PI * 2,
-        depth: 0.55 + Math.random() * 0.45,
-        pulse: 0.25 + Math.random() * 0.35,
+  private seedPatches(): void {
+    this.patches = []
+    for (let i = 0; i < LIQUID_LIGHT.initialPatches; i++) {
+      const channel = (i % 2) as 0 | 1
+      const mass = 0.012 + Math.random() * 0.02
+      this.patches.push({
+        x: 0.28 + Math.random() * 0.44,
+        y: 0.3 + Math.random() * 0.4,
+        vx: (Math.random() - 0.5) * 0.02,
+        vy: (Math.random() - 0.5) * 0.02,
+        mass,
+        radius: Math.sqrt(mass / (Math.PI * 0.9)),
+        channel,
+        age: Math.random() * 4,
       })
     }
   }
 
-  private stepActors(dt: number): void {
-    for (const lobe of this.lobes) {
-      lobe.ang += lobe.spin * dt
-      lobe.x = lobe.baseX + Math.cos(lobe.ang) * lobe.orbit
-      lobe.y = lobe.baseY + Math.sin(lobe.ang * 0.85 + lobe.phase) * lobe.orbit * 0.9
-      for (const other of this.lobes) {
-        if (other === lobe) continue
-        const dx = lobe.x - other.x
-        const dy = lobe.y - other.y
-        const dist = Math.hypot(dx, dy) + 1e-5
-        const min = (lobe.radius + other.radius) * 0.55
-        if (dist < min) {
-          const push = (min - dist) * 0.015
-          lobe.baseX += (dx / dist) * push
-          lobe.baseY += (dy / dist) * push
-        }
+  private stepPatches(dt: number): void {
+    const drag = Math.exp(-LIQUID_LIGHT.drag * dt)
+
+    // すべり＋ゆるい漂い
+    for (const p of this.patches) {
+      p.age += dt
+      p.vx += Math.sin(this.time * 0.35 + p.age) * 0.004 * dt
+      p.vy += Math.cos(this.time * 0.28 + p.age * 0.7) * 0.004 * dt
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.vx *= drag
+      p.vy *= drag
+
+      // 体積保存で広がる: 目標半径 = sqrt(mass / (pi * minThickness))
+      const maxR = Math.sqrt(p.mass / (Math.PI * LIQUID_LIGHT.minThickness))
+      if (p.radius < maxR) {
+        // 最初は速く、広がるほどゆっくり（水面の絵の具っぽさ）
+        const room = maxR - p.radius
+        p.radius += LIQUID_LIGHT.spreadRate * (0.35 + room * 2.5) * dt
+        if (p.radius > maxR) p.radius = maxR
       }
-      lobe.baseX = clampRange(lobe.baseX, 0.22, 0.78)
-      lobe.baseY = clampRange(lobe.baseY, 0.24, 0.74)
+
+      // 端では内側へ戻す（皿の縁）
+      if (p.x < 0.12) p.vx += 0.08 * dt
+      if (p.x > 0.88) p.vx -= 0.08 * dt
+      if (p.y < 0.14) p.vy += 0.08 * dt
+      if (p.y > 0.86) p.vy -= 0.08 * dt
+      p.x = clamp(p.x, 0.08, 0.92)
+      p.y = clamp(p.y, 0.1, 0.9)
     }
 
-    for (const cell of this.cells) {
-      cell.ang += cell.spin * dt * 0.55
-      const ox = Math.cos(cell.ang + cell.phase) * cell.orbit * 0.65
-      const oy = Math.sin(cell.ang * 0.9) * cell.orbit * 0.55
-      cell.x = clampRange(cell.x * 0.999 + (cell.x + ox * 0.02) * 0.001, 0.12, 0.88)
-      cell.y = clampRange(cell.y * 0.999 + (cell.y + oy * 0.02) * 0.001, 0.14, 0.86)
-      for (const other of this.cells) {
-        if (other === cell) continue
-        const dx = cell.x - other.x
-        const dy = cell.y - other.y
-        const dist = Math.hypot(dx, dy) + 1e-5
-        const min = cell.radius + other.radius
-        if (dist < min) {
-          const push = (min - dist) * 0.08
-          cell.x += (dx / dist) * push
-          cell.y += (dy / dist) * push
+    // 干渉: 同色マージ / 異色は押し合い（隙間が自然に空く）
+    for (let i = 0; i < this.patches.length; i++) {
+      for (let j = i + 1; j < this.patches.length; j++) {
+        const a = this.patches[i]
+        const b = this.patches[j]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dist = Math.hypot(dx, dy) + 1e-6
+        const touch = (a.radius + b.radius) * LIQUID_LIGHT.mergeFactor
+
+        if (dist >= touch) continue
+
+        if (a.channel === b.channel) {
+          // ひっついて大きくなる（体積合算、重心へ）
+          const mass = a.mass + b.mass
+          const w = b.mass / mass
+          a.x += dx * w
+          a.y += dy * w
+          a.vx = (a.vx * a.mass + b.vx * b.mass) / mass
+          a.vy = (a.vy * a.mass + b.vy * b.mass) / mass
+          a.mass = mass
+          // いったん少し縮めてからまた広がる感じ
+          a.radius = Math.max(a.radius, b.radius) * 0.92
+          this.patches.splice(j, 1)
+          j--
+        } else {
+          // 混ざらず押し合い → あいだに水面（黒）が残る
+          const overlap = touch - dist
+          const nx = dx / dist
+          const ny = dy / dist
+          const push = overlap * LIQUID_LIGHT.repel
+          const invA = 1 / (a.mass + 1e-6)
+          const invB = 1 / (b.mass + 1e-6)
+          const share = invA + invB
+          a.x -= nx * push * (invA / share)
+          a.y -= ny * push * (invA / share)
+          b.x += nx * push * (invB / share)
+          b.y += ny * push * (invB / share)
+          a.vx -= nx * push * 0.8
+          a.vy -= ny * push * 0.8
+          b.vx += nx * push * 0.8
+          b.vy += ny * push * 0.8
         }
       }
-      // 半径はほぼ固定（呼吸で輪郭が粗く這うのを抑える）
-      const breathe = 1 + Math.sin(this.time * cell.pulse * 0.5 + cell.phase) * 0.015
-      cell.radius = clampRange(cell.radius * 0.999 + cell.radius * breathe * 0.001, 0.01, 0.048)
-    }
-
-    for (let i = this.drips.length - 1; i >= 0; i--) {
-      const d = this.drips[i]
-      d.x += d.vx * dt
-      d.y += d.vy * dt
-      d.vx *= Math.exp(-0.8 * dt)
-      d.vy *= Math.exp(-0.8 * dt)
-      d.life -= dt
-      d.radius *= Math.exp(-0.12 * dt)
-      if (d.life <= 0 || d.radius < 0.004) this.drips.splice(i, 1)
     }
   }
 
@@ -206,149 +186,51 @@ export class LiquidLightEffect implements Effect {
     if (this.time < this.nextDripAt) return
     const span = LIQUID_LIGHT.dripIntervalMax - LIQUID_LIGHT.dripIntervalMin
     this.nextDripAt = this.time + LIQUID_LIGHT.dripIntervalMin + Math.random() * span
+    if (this.patches.length >= LIQUID_LIGHT.maxPatches) return
 
-    const cx = 0.3 + Math.random() * 0.4
-    const cy = 0.32 + Math.random() * 0.36
-    const count = 4 + Math.floor(Math.random() * 6)
-    const ch = Math.floor(Math.random() * 3) as 0 | 1 | 2
-    for (let i = 0; i < count; i++) {
-      const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4
-      const spd = 0.03 + Math.random() * 0.08
-      const life = 2.2 + Math.random() * 2.8
-      this.drips.push({
-        x: cx,
-        y: cy,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        radius: 0.012 + Math.random() * 0.02,
-        channel: Math.random() < 0.75 ? ch : (((ch + 1) % 3) as 0 | 1 | 2),
-        life,
-        maxLife: life,
-        amount: 0.7 + Math.random() * 0.5,
-      })
-    }
-
-    if (this.cells.length > 0 && Math.random() < 0.55) {
-      const idx = Math.floor(Math.random() * this.cells.length)
-      this.cells[idx] = {
-        x: cx + (Math.random() - 0.5) * 0.08,
-        y: cy + (Math.random() - 0.5) * 0.08,
-        radius: 0.01 + Math.random() * 0.03,
-        ang: Math.random() * Math.PI * 2,
-        orbit: 0.01 + Math.random() * 0.03,
-        spin: 0.06 + Math.random() * 0.1,
-        phase: Math.random() * Math.PI * 2,
-        depth: 0.6 + Math.random() * 0.4,
-        pulse: 0.25 + Math.random() * 0.35,
-      }
-    }
+    // 絵の具を一滴落とす → そこから広がる
+    const mass = 0.008 + Math.random() * 0.016
+    this.patches.push({
+      x: 0.25 + Math.random() * 0.5,
+      y: 0.28 + Math.random() * 0.44,
+      vx: (Math.random() - 0.5) * 0.03,
+      vy: (Math.random() - 0.5) * 0.03,
+      mass,
+      radius: Math.sqrt(mass / (Math.PI * 1.4)),
+      channel: Math.random() < 0.5 ? 0 : 1,
+      age: 0,
+    })
   }
 
-  private rebuildThickness(): void {
+  private rebuildFilm(): void {
     const n = LIQUID_LIGHT.gridSize
-    for (let c = 0; c < 3; c++) this.thickness[c].fill(0)
+    this.film[0].fill(0)
+    this.film[1].fill(0)
 
-    const stamp = (
-      field: Float32Array,
-      x: number,
-      y: number,
-      radius: number,
-      amount: number,
-      soft: number,
-    ): void => {
-      const cx = x * (n - 1)
-      const cy = y * (n - 1)
-      const r = Math.max(1.2, radius * n)
-      const r2 = r * r
-      const i0 = Math.max(0, Math.floor(cx - r))
-      const i1 = Math.min(n - 1, Math.ceil(cx + r))
-      const j0 = Math.max(0, Math.floor(cy - r))
-      const j1 = Math.min(n - 1, Math.ceil(cy + r))
-      for (let j = j0; j <= j1; j++) {
-        for (let i = i0; i <= i1; i++) {
-          const dx = i - cx
-          const dy = j - cy
-          const d2 = dx * dx + dy * dy
-          if (d2 > r2) continue
-          const w = Math.exp((-d2 / r2) * soft)
-          field[j * n + i] += amount * w
-        }
-      }
-    }
-
-    for (const lobe of this.lobes) {
-      const pulse = 1 + 0.08 * Math.sin(this.time * lobe.pulse + lobe.phase)
-      stamp(
-        this.thickness[lobe.channel],
-        lobe.x,
-        lobe.y,
-        lobe.radius * pulse,
-        lobe.amount,
-        3.4,
-      )
-    }
-
-    for (const drip of this.drips) {
-      const fade = Math.max(0, drip.life / drip.maxLife)
-      stamp(
-        this.thickness[drip.channel],
-        drip.x,
-        drip.y,
-        drip.radius,
-        drip.amount * fade,
-        2.8,
-      )
-    }
-
-    for (const cell of this.cells) {
-      const cx = cell.x * (n - 1)
-      const cy = cell.y * (n - 1)
-      const r = Math.max(1, cell.radius * n)
-      const r2 = r * r
-      const i0 = Math.max(0, Math.floor(cx - r))
-      const i1 = Math.min(n - 1, Math.ceil(cx + r))
-      const j0 = Math.max(0, Math.floor(cy - r))
-      const j1 = Math.min(n - 1, Math.ceil(cy + r))
-      for (let j = j0; j <= j1; j++) {
-        for (let i = i0; i <= i1; i++) {
-          const dx = i - cx
-          const dy = j - cy
-          const d2 = dx * dx + dy * dy
-          if (d2 > r2) continue
-          const edge = Math.sqrt(d2) / r
-          // 穴は中心をしっかり抜き、縁だけ短く落とす（ぼやけた黒点を避ける）
-          const hard = Math.max(0, 1 - edge)
-          const carve = cell.depth * hard * hard * (edge < 0.85 ? 1 : (1 - edge) / 0.15)
-          const idx = j * n + i
-          this.thickness[0][idx] = Math.max(0, this.thickness[0][idx] - carve)
-          this.thickness[1][idx] = Math.max(0, this.thickness[1][idx] - carve)
-          this.thickness[2][idx] = Math.max(0, this.thickness[2][idx] - carve)
-        }
-      }
+    for (const p of this.patches) {
+      // 体積保存: 平均厚み = mass / (pi r^2)、中心ほど厚く縁は薄い
+      const area = Math.PI * p.radius * p.radius + 1e-6
+      const meanT = p.mass / area
+      stampSoftDisk(this.film[p.channel], n, p.x, p.y, p.radius, meanT * 2.4, 2.6)
     }
   }
 
   private rasterize(params: VisualParams): void {
     const n = LIQUID_LIGHT.gridSize
     const data = this.image.data
-    const colors = LIQUID_LIGHT.palette
-    const c0 = colors[0]
-    const c1 = colors[1]
-    const c2 = colors[2]
-    const c3 = colors[3]
+    const [c0, c1, cHi] = LIQUID_LIGHT.palette
     const gain = LIQUID_LIGHT.gain * params.opacity
-    const absorb = LIQUID_LIGHT.absorb
-    const thinGlow = LIQUID_LIGHT.thinGlow
 
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
         const idx = j * n + i
-        const a = this.thickness[0][idx]
-        const b = this.thickness[1][idx]
-        const c = this.thickness[2][idx]
-        const dens = a + b + c
+        const a = this.film[0][idx]
+        const b = this.film[1][idx]
+        const dens = a + b
         const p = idx * 4
-        if (dens < 0.02) {
+
+        if (dens < 0.015) {
+          // 水＝投影なし＝黒
           data[p] = 0
           data[p + 1] = 0
           data[p + 2] = 0
@@ -356,32 +238,29 @@ export class LiquidLightEffect implements Effect {
           continue
         }
 
-        // 優勢チャンネル寄りに（グラデのにじみ幅を抑える）
+        // 優勢な油の色（混色しすぎない）
         const w0 = a * a
         const w1 = b * b
-        const w2 = c * c
-        const wsum = w0 + w1 + w2 + 1e-5
-        let r = (c0[0] * w0 + c1[0] * w1 + c2[0] * w2) / wsum
-        let g = (c0[1] * w0 + c1[1] * w1 + c2[1] * w2) / wsum
-        let bl = (c0[2] * w0 + c1[2] * w1 + c2[2] * w2) / wsum
+        const wsum = w0 + w1 + 1e-5
+        let r = (c0[0] * w0 + c1[0] * w1) / wsum
+        let g = (c0[1] * w0 + c1[1] * w1) / wsum
+        let bl = (c0[2] * w0 + c1[2] * w1) / wsum
 
-        // 薄い縁は沈ませず、明るくビビッドに残す（くすみの主因だった body 乗算をやめる）
-        const thin = Math.exp(-dens * absorb)
-        r = r * (0.92 + thin * 0.2) + c3[0] * thin * thinGlow * 0.55
-        g = g * (0.92 + thin * 0.2) + c3[1] * thin * thinGlow * 0.55
-        bl = bl * (0.92 + thin * 0.2) + c3[2] * thin * thinGlow * 0.55
+        // 薄い縁はくすませず、少し明るく
+        const thin = Math.exp(-dens * 3.2)
+        r = r * (0.95 + thin * 0.15) + cHi[0] * thin * 0.35
+        g = g * (0.95 + thin * 0.15) + cHi[1] * thin * 0.35
+        bl = bl * (0.95 + thin * 0.15) + cHi[2] * thin * 0.35
 
         const avg = (r + g + bl) / 3
-        r = avg + (r - avg) * 1.25
-        g = avg + (g - avg) * 1.25
-        bl = avg + (bl - avg) * 1.25
+        r = avg + (r - avg) * 1.2
+        g = avg + (g - avg) * 1.2
+        bl = avg + (bl - avg) * 1.2
 
-        // アルファだけでフェード（色自体を濁らせない）
-        const alpha = Math.min(255, dens * 210 * gain)
         data[p] = clamp255(r)
         data[p + 1] = clamp255(g)
         data[p + 2] = clamp255(bl)
-        data[p + 3] = alpha
+        data[p + 3] = Math.min(255, dens * 220 * gain)
       }
     }
     this.gridCtx.putImageData(this.image, 0, 0)
@@ -403,19 +282,17 @@ export class LiquidLightEffect implements Effect {
     lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     lctx.imageSmoothingEnabled = true
     lctx.imageSmoothingQuality = 'high'
-    // 本体はほぼシャープに置き、ごく弱いにじみだけ足す（穴が溶けないように）
     lctx.globalAlpha = 1
     lctx.drawImage(this.gridCanvas, 0, 0, width, height)
     if (LIQUID_LIGHT.upscaleBlur > 0) {
       lctx.filter = `blur(${LIQUID_LIGHT.upscaleBlur}px)`
-      lctx.globalAlpha = 0.35
+      lctx.globalAlpha = 0.3
       lctx.drawImage(this.gridCanvas, 0, 0, width, height)
       lctx.filter = 'none'
       lctx.globalAlpha = 1
     }
 
     this.applyEdgeFade(lctx, width, height, params.edgeFadePx)
-
     ctx.globalCompositeOperation = 'screen'
     ctx.drawImage(layer, 0, 0, width, height)
     ctx.globalCompositeOperation = 'source-over'
@@ -429,10 +306,10 @@ export class LiquidLightEffect implements Effect {
   ): void {
     const band = Math.max(1, fadePx)
     const grads = [
-      grad(ctx, 0, 0, band, 0),
-      grad(ctx, width, 0, width - band, 0),
-      grad(ctx, 0, 0, 0, band),
-      grad(ctx, 0, height, 0, height - band),
+      makeFade(ctx, 0, 0, band, 0),
+      makeFade(ctx, width, 0, width - band, 0),
+      makeFade(ctx, 0, 0, 0, band),
+      makeFade(ctx, 0, height, 0, height - band),
     ]
     for (const g of grads) {
       ctx.globalCompositeOperation = 'destination-in'
@@ -455,7 +332,36 @@ export class LiquidLightEffect implements Effect {
   }
 }
 
-function grad(
+function stampSoftDisk(
+  field: Float32Array,
+  n: number,
+  x: number,
+  y: number,
+  radius: number,
+  amount: number,
+  soft: number,
+): void {
+  const cx = x * (n - 1)
+  const cy = y * (n - 1)
+  const r = Math.max(1.2, radius * n)
+  const r2 = r * r
+  const i0 = Math.max(0, Math.floor(cx - r))
+  const i1 = Math.min(n - 1, Math.ceil(cx + r))
+  const j0 = Math.max(0, Math.floor(cy - r))
+  const j1 = Math.min(n - 1, Math.ceil(cy + r))
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const dx = i - cx
+      const dy = j - cy
+      const d2 = dx * dx + dy * dy
+      if (d2 > r2) continue
+      const w = Math.exp((-d2 / r2) * soft)
+      field[j * n + i] += amount * w
+    }
+  }
+}
+
+function makeFade(
   ctx: CanvasRenderingContext2D,
   x0: number,
   y0: number,
@@ -468,7 +374,7 @@ function grad(
   return g
 }
 
-function clampRange(v: number, min: number, max: number): number {
+function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v))
 }
 
