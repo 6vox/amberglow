@@ -1,9 +1,16 @@
 import { VISUAL, type PaletteMode, type PaletteName } from './config'
+import {
+  EFFECT_META,
+  nextEffectId,
+  prevEffectId,
+  type EffectId,
+} from './effects'
 import type { VisualParams } from './visualParams'
 import { setPaletteColors } from './visualParams'
 
 export interface ControlState {
   paletteMode: PaletteMode
+  effectId: EffectId
   helpVisible: boolean
   debugVisible: boolean
 }
@@ -13,11 +20,13 @@ export type ControlCallbacks = {
   onDebugToggle: (visible: boolean) => void
   onSpeedChange: (speed: number) => void
   onModeChange: (mode: PaletteMode) => void
+  onEffectChange: (effectId: EffectId) => void
 }
 
 /**
  * キーボード操作。
- * F フルスクリーン / 1–4 パレット / 0 自動 / ↑↓ 速度 / D デバッグ / H ヘルプ
+ * F フルスクリーン / 1–4 パレット / 0 自動 / ↑↓ 速度
+ * E / Shift+E エフェクト切替 / D デバッグ / H ヘルプ
  */
 export function attachControls(
   params: VisualParams,
@@ -50,6 +59,15 @@ export function attachControls(
         state.paletteMode = 'auto'
         callbacks.onModeChange('auto')
         break
+      case 'e': {
+        event.preventDefault()
+        const next = event.shiftKey
+          ? prevEffectId(state.effectId)
+          : nextEffectId(state.effectId)
+        state.effectId = next
+        callbacks.onEffectChange(next)
+        break
+      }
       case 'ArrowUp':
         event.preventDefault()
         params.speed = clamp(
@@ -83,6 +101,11 @@ export function attachControls(
 
   window.addEventListener('keydown', onKeyDown)
   return () => window.removeEventListener('keydown', onKeyDown)
+}
+
+export function effectLabel(id: EffectId): string {
+  const meta = EFFECT_META[id]
+  return meta.ready ? meta.label : `${meta.label}（準備中）`
 }
 
 function setManualPalette(
