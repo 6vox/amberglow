@@ -331,7 +331,7 @@ export class LiquidLightEffect implements Effect {
   private rasterize(params: VisualParams): void {
     const n = LIQUID_LIGHT.gridSize
     const data = this.image.data
-    const colors = params.colors
+    const colors = LIQUID_LIGHT.palette
     const c0 = colors[0]
     const c1 = colors[1]
     const c2 = colors[2]

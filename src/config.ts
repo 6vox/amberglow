@@ -74,16 +74,26 @@ export const LIQUID_LIGHT = {
   /** 常時いるセル穴の数 */
   cellCount: 34,
   /** 光の吸収（厚いほど色が沈む） */
-  absorb: 2.1,
-  /** 薄いところのハイライト混ざり */
-  thinGlow: 0.62,
+  absorb: 2.4,
+  /** 薄いところのハイライト混ざり（抑えめ＝AIデモ感を減らす） */
+  thinGlow: 0.38,
   /** 表示ゲイン */
-  gain: 1.25,
+  gain: 1.15,
   /** 拡大にじみ — セル穴を潰さないよう弱め */
   upscaleBlur: 1,
   /** 飛沫（小さな滴）の間隔秒 */
   dripIntervalMin: 5,
   dripIntervalMax: 12,
+  /**
+   * リキッドライト専用色（光の煙パレットとは独立）。
+   * 濁りのある暖色／ワイン／くすんだ緑青＋弱い暖色ハイライト。
+   */
+  palette: [
+    [150, 48, 42],
+    [186, 118, 48],
+    [62, 98, 92],
+    [236, 198, 132],
+  ] as const satisfies readonly RGB[],
 } as const
 
 export type PaletteName = keyof typeof PALETTES
