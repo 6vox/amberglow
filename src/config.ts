@@ -28,7 +28,7 @@ export const PHASE_HOURS = {
 
 export const VISUAL = {
   /** 時間進行の基準速度（デバッグUIでも操作） */
-  baseSpeed: 0.22,
+  baseSpeed: 0.20,
   speedStep: 0.01,
   speedMin: 0.01,
   speedMax: 2.0,
