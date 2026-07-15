@@ -73,12 +73,12 @@ export const LIQUID_LIGHT = {
   lobeCount: 6,
   /** 常時いるセル穴の数 */
   cellCount: 34,
-  /** 光の吸収（厚いほど色が沈む） */
-  absorb: 1.7,
+  /** 光の吸収（薄い縁の明るさ制御） */
+  absorb: 2.2,
   /** 薄いところのハイライト混ざり */
-  thinGlow: 0.72,
+  thinGlow: 0.5,
   /** 表示ゲイン */
-  gain: 1.55,
+  gain: 1.35,
   /** 拡大にじみ — セル穴を潰さないよう弱め */
   upscaleBlur: 1,
   /** 飛沫（小さな滴）の間隔秒 */

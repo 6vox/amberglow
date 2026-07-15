@@ -284,7 +284,7 @@ export class LiquidLightEffect implements Effect {
         lobe.y,
         lobe.radius * pulse,
         lobe.amount,
-        2.2,
+        3.4,
       )
     }
 
@@ -357,29 +357,28 @@ export class LiquidLightEffect implements Effect {
         }
 
         const sum = dens
-        let r = (c0[0] * a + c1[0] * b + c2[0] * c) / sum
-        let g = (c0[1] * a + c1[1] * b + c2[1] * c) / sum
-        let bl = (c0[2] * a + c1[2] * b + c2[2] * c) / sum
+        // 優勢チャンネル寄りに（グラデのにじみ幅を抑える）
+        const w0 = a * a
+        const w1 = b * b
+        const w2 = c * c
+        const wsum = w0 + w1 + w2 + 1e-5
+        let r = (c0[0] * w0 + c1[0] * w1 + c2[0] * w2) / wsum
+        let g = (c0[1] * w0 + c1[1] * w1 + c2[1] * w2) / wsum
+        let bl = (c0[2] * w0 + c1[2] * w1 + c2[2] * w2) / wsum
 
-        const transmit = Math.exp(-dens * absorb)
-        const body = 1 - transmit
-        r = r * body + c3[0] * transmit * thinGlow
-        g = g * body + c3[1] * transmit * thinGlow
-        bl = bl * body + c3[2] * transmit * thinGlow
+        // 薄い縁は沈ませず、明るくビビッドに残す（くすみの主因だった body 乗算をやめる）
+        const thin = Math.exp(-dens * absorb)
+        r = r * (0.92 + thin * 0.2) + c3[0] * thin * thinGlow * 0.55
+        g = g * (0.92 + thin * 0.2) + c3[1] * thin * thinGlow * 0.55
+        bl = bl * (0.92 + thin * 0.2) + c3[2] * thin * thinGlow * 0.55
 
-        // 彩度を少し押し上げて投影っぽいビビッドさに
         const avg = (r + g + bl) / 3
-        r = avg + (r - avg) * 1.35
-        g = avg + (g - avg) * 1.35
-        bl = avg + (bl - avg) * 1.35
+        r = avg + (r - avg) * 1.25
+        g = avg + (g - avg) * 1.25
+        bl = avg + (bl - avg) * 1.25
 
-        // セル縁の明るいリング
-        const edgeBoost = Math.min(1, dens * 2.2) * (1 - Math.min(1, dens / 1.35))
-        r += (c3[0] - r) * edgeBoost * 0.45
-        g += (c3[1] - g) * edgeBoost * 0.45
-        bl += (c3[2] - bl) * edgeBoost * 0.45
-
-        const alpha = Math.min(255, Math.max(body, edgeBoost * 0.65) * 255 * gain)
+        // アルファだけでフェード（色自体を濁らせない）
+        const alpha = Math.min(255, dens * 210 * gain)
         data[p] = clamp255(r)
         data[p + 1] = clamp255(g)
         data[p + 2] = clamp255(bl)
