@@ -108,10 +108,31 @@ body.is-pointer-idle .debug {
   margin-top: 0.85rem;
 }
 
-#speed-slider {
+#speed-slider,
+#fade-slider {
   width: 100%;
   accent-color: #e8c48a;
   cursor: pointer;
+}
+
+.effect-toggle {
+  margin: 0;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.effect-toggle:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.effect-toggle strong {
+  font-weight: 600;
 }
 
 .debug-hint {

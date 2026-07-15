@@ -19,14 +19,17 @@
         <li><kbd>0</kbd> 時刻連動（自動）</li>
         <li><kbd>↑</kbd> / <kbd>↓</kbd> 速度</li>
         <li><kbd>E</kbd> エフェクト切替（光の煙 / リキッドライト）</li>
+        <li>スマホ: デバッグの effect をタップで切替</li>
         <li><kbd>D</kbd> デバッグ表示</li>
         <li><kbd>H</kbd> このヘルプ</li>
       </ul>
     </aside>
     <aside id="debug" class="debug">
       <div class="debug-row">
-        <label>effect</label>
-        <strong id="effect-value">光の煙</strong>
+        <label for="effect-toggle">effect</label>
+        <button type="button" id="effect-toggle" class="effect-toggle">
+          <strong id="effect-value">リキッドライト</strong>
+        </button>
       </div>
       <div class="debug-row debug-row-spaced">
         <label for="speed-slider">speed</label>
@@ -52,7 +55,7 @@
         step="1"
         value="100"
       />
-      <p class="debug-hint">E effect · ↑↓ speed · F fullscreen · D hide</p>
+      <p class="debug-hint">tap effect · E key · ↑↓ speed · F fullscreen · D hide</p>
     </aside>
     <script type="module" src="/src/play/main.ts"></script>
   </body>

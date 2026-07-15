@@ -3,6 +3,7 @@ import { attachControls, effectLabel, type ControlState } from '../controls'
 import {
   createEffect,
   EFFECT_META,
+  nextEffectId,
   type Effect,
   type EffectId,
 } from '../effects'
@@ -17,6 +18,7 @@ const speedValue = document.querySelector<HTMLElement>('#speed-value')
 const fadeSlider = document.querySelector<HTMLInputElement>('#fade-slider')
 const fadeValue = document.querySelector<HTMLElement>('#fade-value')
 const effectValue = document.querySelector<HTMLElement>('#effect-value')
+const effectToggle = document.querySelector<HTMLButtonElement>('#effect-toggle')
 
 if (
   !canvas
@@ -27,6 +29,7 @@ if (
   || !fadeSlider
   || !fadeValue
   || !effectValue
+  || !effectToggle
 ) {
   throw new Error('Required DOM nodes missing')
 }
@@ -37,12 +40,13 @@ const speedValueEl = speedValue
 const fadeSliderEl = fadeSlider
 const fadeValueEl = fadeValue
 const effectValueEl = effectValue
+const effectToggleEl = effectToggle
 
 const params = createVisualParams()
 const state: ControlState = {
   // 見た目調整中は固定パレット（時間帯連動は後で戻す）
   paletteMode: 'sunset',
-  effectId: 'smoke',
+  effectId: 'liquidLight',
   helpVisible: false,
   debugVisible: true,
 }
@@ -94,6 +98,10 @@ speedSliderEl.addEventListener('input', () => {
 fadeSliderEl.addEventListener('input', () => {
   params.edgeFadePx = Number(fadeSliderEl.value)
   syncFadeUi(params.edgeFadePx)
+})
+
+effectToggleEl.addEventListener('click', () => {
+  setEffect(nextEffectId(state.effectId))
 })
 
 attachControls(params, state, {
