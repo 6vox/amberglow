@@ -29,8 +29,8 @@ export const PHASE_HOURS = {
 export const VISUAL = {
   /** 時間進行の基準速度（デバッグUIでも操作） */
   baseSpeed: 0.22,
-  speedStep: 0.05,
-  speedMin: 0.08,
+  speedStep: 0.01,
+  speedMin: 0.01,
   speedMax: 2.0,
 
   /** 流体グリッド解像度（大きいほど細かいが重い） */
