@@ -17,7 +17,7 @@ export interface Effect {
 
 export const EFFECT_META: Record<EffectId, EffectMeta> = {
   smoke: { id: 'smoke', label: '光の煙', ready: true },
-  liquidLight: { id: 'liquidLight', label: 'リキッドライト', ready: false },
+  liquidLight: { id: 'liquidLight', label: 'リキッドライト', ready: true },
 }
 
 export const EFFECT_ORDER: EffectId[] = ['smoke', 'liquidLight']

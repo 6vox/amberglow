@@ -62,5 +62,29 @@ export const VISUAL = {
   trailFade: 0,
 } as const
 
+/**
+ * リキッドライト専用（光の煙の VISUAL とは独立）。
+ * 油膜の厚み・セル穴・透過光で、煙とは別系統の表現にする。
+ */
+export const LIQUID_LIGHT = {
+  /** 内部グリッド（粗いほどブラウン管／アナログ寄り） */
+  gridSize: 112,
+  /** 大きな油域の数 */
+  lobeCount: 6,
+  /** 常時いるセル穴の数 */
+  cellCount: 34,
+  /** 光の吸収（厚いほど色が沈む） */
+  absorb: 2.1,
+  /** 薄いところのハイライト混ざり */
+  thinGlow: 0.62,
+  /** 表示ゲイン */
+  gain: 1.25,
+  /** 拡大にじみ */
+  upscaleBlur: 3,
+  /** 飛沫（小さな滴）の間隔秒 */
+  dripIntervalMin: 5,
+  dripIntervalMax: 12,
+} as const
+
 export type PaletteName = keyof typeof PALETTES
 export type PaletteMode = PaletteName | 'auto'
