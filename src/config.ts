@@ -52,9 +52,10 @@ export const VISUAL = {
   /**
    * 床へのフェード。
    * inner まで不透明、outer で完全に床へ溶ける（画面短辺に対する比率）。
+   * 差が大きいほどフェード幅が広い。
    */
-  fadeInner: 0.42,
-  fadeOuter: 0.72,
+  fadeInner: 0.28,
+  fadeOuter: 0.88,
   floorColor: [14, 12, 10] as RGB,
 
   layerOpacity: 1,
