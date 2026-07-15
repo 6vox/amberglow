@@ -11,12 +11,12 @@ export const LOCATION = {
   timezoneOffsetHours: 9,
 } as const
 
-/** 理想寄せ固定パレット（時間帯連動は後で戻す） */
+/** 理想寄せ固定パレット（ビビッド寄りで投影時のコントラストを優先） */
 export const PALETTES = {
-  day: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
-  evening: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
-  sunset: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
-  night: [[210, 45, 20], [240, 140, 35], [90, 150, 215], [255, 230, 150]] as const satisfies readonly RGB[],
+  day: [[255, 28, 12], [255, 170, 10], [20, 170, 255], [255, 245, 90]] as const satisfies readonly RGB[],
+  evening: [[255, 28, 12], [255, 170, 10], [20, 170, 255], [255, 245, 90]] as const satisfies readonly RGB[],
+  sunset: [[255, 28, 12], [255, 170, 10], [20, 170, 255], [255, 245, 90]] as const satisfies readonly RGB[],
+  night: [[255, 28, 12], [255, 170, 10], [20, 170, 255], [255, 245, 90]] as const satisfies readonly RGB[],
 } as const
 
 export const PHASE_HOURS = {

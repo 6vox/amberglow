@@ -75,45 +75,50 @@ export class LiquidLightSim {
     const rng = new SeededRandom(seed)
     const n = this.n
 
-    // 大きな油性領域（赤/オレンジ相当 → dye0）
-    this.addPhaseBlob(0.38 + rng.range(-0.04, 0.04), 0.46 + rng.range(-0.03, 0.03), 0.19, 'oil', 0.75)
-    this.addDyeBlob(0.38, 0.46, 0.17, 0, 0.9)
-    this.addDyeBlob(0.42, 0.5, 0.12, 1, 0.35)
+    // 大きな油性領域（赤）— 中央やや左
+    this.addPhaseBlob(0.34, 0.44, 0.22, 'oil', 0.95)
+    this.addDyeBlob(0.34, 0.44, 0.2, 0, 1.4)
+    this.addThickness(0.34, 0.44, 0.18, 0.7)
 
-    // 水性領域（青/紫相当 → dye2）
-    this.addPhaseBlob(0.62 + rng.range(-0.05, 0.05), 0.52 + rng.range(-0.04, 0.04), 0.16, 'water', 0.7)
-    this.addDyeBlob(0.62, 0.52, 0.15, 2, 0.85)
+    // オレンジの油性帯
+    this.addPhaseBlob(0.48, 0.58, 0.14, 'oil', 0.8)
+    this.addDyeBlob(0.48, 0.58, 0.13, 1, 1.2)
+    this.addThickness(0.48, 0.58, 0.12, 0.55)
 
-    // 小さな黄色滴（油性）
-    for (let i = 0; i < 4; i++) {
-      const x = 0.45 + rng.range(-0.12, 0.12)
-      const y = 0.55 + rng.range(-0.1, 0.1)
-      const r = rng.range(0.03, 0.055)
-      this.addPhaseBlob(x, y, r, 'oil', rng.range(0.45, 0.65))
-      this.addDyeBlob(x, y, r * 0.9, 1, rng.range(0.5, 0.75))
-      this.addThickness(x, y, r, rng.range(0.3, 0.5))
+    // 水性領域（シアン）— 右
+    this.addPhaseBlob(0.68, 0.48, 0.18, 'water', 0.9)
+    this.addDyeBlob(0.68, 0.48, 0.17, 2, 1.35)
+    this.addThickness(0.68, 0.48, 0.15, 0.6)
+
+    // 黄色い小さな滴
+    for (let i = 0; i < 5; i++) {
+      const x = 0.4 + rng.range(-0.18, 0.22)
+      const y = 0.42 + rng.range(-0.12, 0.18)
+      const r = rng.range(0.035, 0.065)
+      this.addPhaseBlob(x, y, r, 'oil', rng.range(0.55, 0.85))
+      this.addDyeBlob(x, y, r * 0.95, 1, rng.range(0.9, 1.3))
+      this.addThickness(x, y, r, rng.range(0.4, 0.7))
     }
 
-    // 複数の丸いセル
-    for (let i = 0; i < 5; i++) {
-      const isOil = i % 2 === 0
-      const x = 0.3 + rng.range(0, 0.4)
-      const y = 0.35 + rng.range(0, 0.3)
-      const r = rng.range(0.04, 0.08)
-      this.addPhaseBlob(x, y, r, isOil ? 'oil' : 'water', rng.range(0.35, 0.55))
-      this.addDyeBlob(x, y, r * 0.85, isOil ? 0 : 2, rng.range(0.4, 0.65))
-      this.addThickness(x, y, r, rng.range(0.25, 0.45))
+    // 水性セル（青）
+    for (let i = 0; i < 4; i++) {
+      const x = 0.55 + rng.range(-0.15, 0.2)
+      const y = 0.55 + rng.range(-0.15, 0.15)
+      const r = rng.range(0.04, 0.09)
+      this.addPhaseBlob(x, y, r, 'water', rng.range(0.5, 0.8))
+      this.addDyeBlob(x, y, r * 0.9, 2, rng.range(0.85, 1.25))
+      this.addThickness(x, y, r, rng.range(0.35, 0.6))
     }
 
     // ごく弱い初期回転
     for (let j = 1; j <= n; j++) {
       for (let i = 1; i <= n; i++) {
         const idx = this.ix(i, j)
-        const nx = (i / n) - 0.48
+        const nx = (i / n) - 0.45
         const ny = (j / n) - 0.5
         const dist = Math.sqrt(nx * nx + ny * ny) + 0.01
-        this.u[idx] += (-ny / dist) * 0.8 * Math.exp(-dist * 6)
-        this.v[idx] += (nx / dist) * 0.8 * Math.exp(-dist * 6)
+        this.u[idx] += (-ny / dist) * 1.2 * Math.exp(-dist * 5)
+        this.v[idx] += (nx / dist) * 1.2 * Math.exp(-dist * 5)
       }
     }
   }
@@ -156,8 +161,10 @@ export class LiquidLightSim {
 
     this.applySurfaceTension()
     this.separatePhases()
+    this.sharpenDyes()
     this.followDyesWithPhases()
     this.applyDissipation()
+    this.dampenVelocity(0.992)
   }
 
   /** 正規化座標 0–1 に力を加える */
@@ -256,13 +263,13 @@ export class LiquidLightSim {
         smoothField(n, field, this.scratch)
         field.set(this.scratch)
       }
-      // コントラスト強調で丸い輪郭を維持
+      // コントラスト強調で丸い輪郭を維持（閾値を下げて色面を残す）
       for (let j = 1; j <= n; j++) {
         for (let i = 1; i <= n; i++) {
           const idx = this.ix(i, j)
           const v = field[idx]
-          const centered = (v - 0.35) * sharpen + 0.35
-          field[idx] = Math.max(0, Math.min(1, centered))
+          const centered = (v - 0.28) * sharpen + 0.28
+          field[idx] = Math.max(0, Math.min(1.2, centered))
         }
       }
     }
@@ -277,18 +284,37 @@ export class LiquidLightSim {
         let o = this.oil[idx]
         let w = this.water[idx]
         const sum = o + w
-        if (sum > 1) {
-          const scale = 1 / sum
+        if (sum > 1.15) {
+          const scale = 1.15 / sum
           o *= scale
           w *= scale
         }
-        // 境界で互いに押し出す
+        // 境界で強く押し出す
         const diff = o - w
-        const push = diff * sep * 0.08
-        o = Math.max(0, Math.min(1, o + push))
-        w = Math.max(0, Math.min(1, w - push))
+        const push = Math.sign(diff) * Math.min(0.2, Math.abs(diff) * sep * 0.18)
+        o = Math.max(0, Math.min(1.2, o + push))
+        w = Math.max(0, Math.min(1.2, w - push))
         this.oil[idx] = o
         this.water[idx] = w
+      }
+    }
+  }
+
+  private sharpenDyes(): void {
+    const n = this.n
+    const sharpen = LIQUID_LIGHT.dyeSharpen
+    for (let c = 0; c < 3; c++) {
+      const field = this.dye[c]
+      for (let j = 1; j <= n; j++) {
+        for (let i = 1; i <= n; i++) {
+          const idx = this.ix(i, j)
+          const v = field[idx]
+          if (v < 0.02) {
+            field[idx] *= 0.97
+            continue
+          }
+          field[idx] = Math.max(0, Math.min(1.8, (v - 0.2) * sharpen + 0.2))
+        }
       }
     }
   }
@@ -300,31 +326,37 @@ export class LiquidLightSim {
         const idx = this.ix(i, j)
         const o = this.oil[idx]
         const w = this.water[idx]
-        const liquid = Math.min(1, o + w)
-        // 油性染料は油フェーズに、水性染料は水フェーズに追従
-        this.dye[0][idx] *= o > 0.02 ? 1 : 0.985
-        this.dye[0][idx] = Math.min(this.dye[0][idx], o * 1.2)
-        this.dye[1][idx] *= liquid > 0.02 ? 1 : 0.985
-        this.dye[1][idx] = Math.min(this.dye[1][idx], Math.max(o, w * 0.5) * 1.1)
-        this.dye[2][idx] *= w > 0.02 ? 1 : 0.985
-        this.dye[2][idx] = Math.min(this.dye[2][idx], w * 1.2)
-        // 境界補助色は勾配が大きい所に
+        const liquid = Math.min(1.2, o + w)
+        // 相のない場所の染料だけ弱く減衰（クランプで潰さない）
+        if (o < 0.04) this.dye[0][idx] *= 0.992
+        if (liquid < 0.04) this.dye[1][idx] *= 0.992
+        if (w < 0.04) this.dye[2][idx] *= 0.992
+        // 境界補助色
         const gx = this.oil[this.ix(i + 1, j)] - this.oil[this.ix(i - 1, j)]
         const gy = this.oil[this.ix(i, j + 1)] - this.oil[this.ix(i, j - 1)]
         const gxw = this.water[this.ix(i + 1, j)] - this.water[this.ix(i - 1, j)]
         const gyw = this.water[this.ix(i, j + 1)] - this.water[this.ix(i, j - 1)]
         const edge = Math.sqrt(gx * gx + gy * gy + gxw * gxw + gyw * gyw)
-        this.dye[3][idx] = this.dye[3][idx] * 0.92 + edge * 0.35
+        this.dye[3][idx] = this.dye[3][idx] * 0.9 + edge * 0.45
       }
     }
-    // 厚みは液体量に連動
+    // 厚みはゆっくり液体量へ寄せる（急激な均一化を避ける）
     for (let j = 1; j <= n; j++) {
       for (let i = 1; i <= n; i++) {
         const idx = this.ix(i, j)
-        const liquid = Math.min(1, this.oil[idx] + this.water[idx])
-        const target = liquid * 0.55 + (this.dye[0][idx] + this.dye[1][idx] + this.dye[2][idx]) * 0.08
-        this.thickness[idx] = this.thickness[idx] * 0.85 + target * 0.15
+        const liquid = Math.min(1.2, this.oil[idx] + this.water[idx])
+        const dyeSum = this.dye[0][idx] + this.dye[1][idx] + this.dye[2][idx]
+        const target = liquid * 0.45 + dyeSum * 0.12
+        this.thickness[idx] = this.thickness[idx] * 0.96 + target * 0.04
+        if (liquid < 0.03) this.thickness[idx] *= 0.98
       }
+    }
+  }
+
+  private dampenVelocity(factor: number): void {
+    for (let i = 0; i < this.u.length; i++) {
+      this.u[i] *= factor
+      this.v[i] *= factor
     }
   }
 

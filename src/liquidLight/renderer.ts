@@ -19,9 +19,22 @@ function lerpRgb(from: RGB, to: RGB, t: number): RGB {
   ]
 }
 
+/** 彩度を上げる（グレー寄りにせずビビッドにする） */
+function boostSaturation(r: number, g: number, b: number, amount: number): [number, number, number] {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const mid = (r + g + b) / 3
+  if (max - min < 1) return [r, g, b]
+  return [
+    mid + (r - mid) * amount,
+    mid + (g - mid) * amount,
+    mid + (b - mid) * amount,
+  ]
+}
+
 /**
  * シミュレーション結果を透過光として描画する。
- * 染料吸収 + 厚みによる明暗、境界の縁取り・屈折を近似する。
+ * 染料チャンネルをパレット色へ直接写像し、厚みで明暗を付ける。
  */
 export class LiquidLightRenderer {
   private readonly simCanvas: HTMLCanvasElement
@@ -83,7 +96,7 @@ export class LiquidLightRenderer {
     const gain = LIQUID_LIGHT.lightGain * params.opacity
     const data = this.image.data
 
-    this.buildBoundaryBuffers()
+    this.buildBoundaryBuffers(roles)
 
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
@@ -91,9 +104,16 @@ export class LiquidLightRenderer {
         const p = (j * n + i) * 4
         const oil = this.sim.oil[idx]
         const water = this.sim.water[idx]
-        const liquid = Math.min(1, oil + water)
+        const liquid = Math.min(1.2, oil + water)
 
-        if (liquid < 0.008) {
+        const d0 = Math.max(0, this.sim.dye[0][idx])
+        const d1 = Math.max(0, this.sim.dye[1][idx])
+        const d2 = Math.max(0, this.sim.dye[2][idx])
+        const d3 = Math.max(0, this.sim.dye[3][idx])
+        const dyeSum = d0 + d1 + d2
+        const presence = Math.max(liquid * 0.55, dyeSum * 0.45)
+
+        if (presence < 0.04) {
           data[p] = 0
           data[p + 1] = 0
           data[p + 2] = 0
@@ -101,59 +121,54 @@ export class LiquidLightRenderer {
           continue
         }
 
-        const d0 = this.sim.dye[0][idx]
-        const d1 = this.sim.dye[1][idx]
-        const d2 = this.sim.dye[2][idx]
-        const d3 = this.sim.dye[3][idx]
         const thick = Math.max(0.05, this.sim.thickness[idx])
 
-        // 透過光: 白い光が染料・厚みで吸収される近似
-        const oilW = oil / (liquid + 0.001)
-        const waterW = water / (liquid + 0.001)
+        // 染料チャンネルをパレット色へ直接混合（濁らない）
+        const w0 = d0 + oil * 0.15
+        const w1 = d1 + oil * 0.08
+        const w2 = d2 + water * 0.2
+        const wSum = Math.max(0.001, w0 + w1 + w2)
+        let r = (roles.oilA[0] * w0 + roles.oilB[0] * w1 + roles.water[0] * w2) / wSum
+        let g = (roles.oilA[1] * w0 + roles.oilB[1] * w1 + roles.water[1] * w2) / wSum
+        let b = (roles.oilA[2] * w0 + roles.oilB[2] * w1 + roles.water[2] * w2) / wSum
 
-        let absorbR = (d0 * roles.oilA[0] + d1 * roles.oilB[0] * oilW + d2 * roles.water[0] * waterW + d3 * roles.accent[0] * 0.3) / 255
-        let absorbG = (d0 * roles.oilA[1] + d1 * roles.oilB[1] * oilW + d2 * roles.water[1] * waterW + d3 * roles.accent[1] * 0.3) / 255
-        let absorbB = (d0 * roles.oilA[2] + d1 * roles.oilB[2] * oilW + d2 * roles.water[2] * waterW + d3 * roles.accent[2] * 0.3) / 255
+        // 境界薄膜色を少し混ぜる
+        const film = Math.min(0.35, d3 * 0.4)
+        r = lerp(r, roles.accent[0], film)
+        g = lerp(g, roles.accent[1], film)
+        b = lerp(b, roles.accent[2], film)
 
-        const density = (d0 + d1 + d2) * 0.35 + thick * 0.65
-        absorbR = absorbR * density * 1.1
-        absorbG = absorbG * density * 1.05
-        absorbB = absorbB * density * 1.15
+        // 厚み: 薄い＝明るく、厚い＝濃く深い
+        const thinGlow = Math.exp(-thick * 1.4)
+        const deep = 0.42 + thick * 0.55
+        r *= deep * (0.75 + thinGlow * 0.55)
+        g *= deep * (0.75 + thinGlow * 0.55)
+        b *= deep * (0.75 + thinGlow * 0.55)
 
-        // Beer-Lambert 近似
-        let r = 255 * Math.exp(-absorbR * 2.2)
-        let g = 255 * Math.exp(-absorbG * 2.0)
-        let b = 255 * Math.exp(-absorbB * 2.3)
+        // 薄い縁はアクセントで少し発光
+        r += roles.accent[0] * thinGlow * 0.12 * presence
+        g += roles.accent[1] * thinGlow * 0.1 * presence
+        b += roles.accent[2] * thinGlow * 0.08 * presence
 
-        // 薄い場所は明るく、厚い場所は暗く
-        const thinBoost = Math.exp(-thick * 1.8) * 0.35
-        r = r * (0.55 + thinBoost) + roles.accent[0] * thinBoost * 0.15
-        g = g * (0.55 + thinBoost) + roles.accent[1] * thinBoost * 0.15
-        b = b * (0.55 + thinBoost) + roles.accent[2] * thinBoost * 0.15
+        ;[r, g, b] = boostSaturation(r, g, b, LIQUID_LIGHT.saturationBoost)
 
-        const sat = Math.min(1, (d0 + d1 + d2) * 0.4)
-        r = lerp(r, roles.oilA[0] * (0.4 + thick * 0.5), sat * 0.25)
-        g = lerp(g, roles.water[1] * (0.35 + thick * 0.45), sat * 0.2)
-        b = lerp(b, roles.water[2] * (0.4 + thick * 0.5), sat * 0.22)
-
-        // 境界表現
+        // 境界の縁取り
         const bi = j * n + i
         const edge = this.boundaryStrength(i, j)
         const hi = edge * LIQUID_LIGHT.edgeHighlight
         const lo = edge * LIQUID_LIGHT.edgeDarken
         r = r * (1 - lo) + 255 * hi
-        g = g * (1 - lo) + 255 * hi * 0.95
-        b = b * (1 - lo) + 255 * hi * 0.9
+        g = g * (1 - lo) + 245 * hi
+        b = b * (1 - lo) + 230 * hi
 
-        // 屈折: ごく小さなチャンネルずれ
-        const shift = LIQUID_LIGHT.refractionShift
-        if (edge > 0.05) {
-          r = r * 0.85 + this.boundaryR[bi] * 0.15 * (1 + shift * 0.02)
-          g = g * 0.88 + this.boundaryG[bi] * 0.12
-          b = b * 0.85 + this.boundaryB[bi] * 0.15 * (1 - shift * 0.02)
+        if (edge > 0.08) {
+          const shift = LIQUID_LIGHT.refractionShift
+          r = r * 0.82 + this.boundaryR[bi] * 0.18 * (1 + shift * 0.015)
+          g = g * 0.86 + this.boundaryG[bi] * 0.14
+          b = b * 0.82 + this.boundaryB[bi] * 0.18 * (1 - shift * 0.015)
         }
 
-        const alpha = Math.min(255, liquid * density * 210 * gain)
+        const alpha = Math.min(255, presence * (0.7 + thick * 0.5) * 240 * gain)
         data[p] = clampByte(r)
         data[p + 1] = clampByte(g)
         data[p + 2] = clampByte(b)
@@ -163,7 +178,6 @@ export class LiquidLightRenderer {
 
     this.simCtx.putImageData(this.image, 0, 0)
 
-    // 黒ベース + 透過光を screen で合成
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = 1
     ctx.fillStyle = '#000'
@@ -180,7 +194,7 @@ export class LiquidLightRenderer {
     lctx.filter = `blur(${LIQUID_LIGHT.upscaleBlur}px)`
     lctx.drawImage(this.simCanvas, 0, 0, width, height)
     lctx.filter = 'none'
-    lctx.globalAlpha = 0.92
+    lctx.globalAlpha = 0.95
     lctx.drawImage(this.simCanvas, 0, 0, width, height)
     lctx.globalAlpha = 1
 
@@ -192,7 +206,7 @@ export class LiquidLightRenderer {
     ctx.globalCompositeOperation = 'source-over'
   }
 
-  private buildBoundaryBuffers(): void {
+  private buildBoundaryBuffers(roles: ReturnType<typeof paletteRoles>): void {
     const n = this.sim.n
     const shift = Math.round(LIQUID_LIGHT.refractionShift)
     for (let j = 0; j < n; j++) {
@@ -205,11 +219,10 @@ export class LiquidLightRenderer {
         const d0 = this.sim.dye[0][idx]
         const d1 = this.sim.dye[1][idx]
         const d2 = this.sim.dye[2][idx]
-        const t = this.sim.thickness[idx]
-        const bright = edge * (180 + t * 40)
-        this.boundaryR[bi] = clampByte(d0 * 80 + bright)
-        this.boundaryG[bi] = clampByte(d1 * 70 + bright * 0.95)
-        this.boundaryB[bi] = clampByte(d2 * 90 + bright * 0.88)
+        const bright = edge * 200
+        this.boundaryR[bi] = clampByte(roles.oilA[0] * 0.4 + d0 * 60 + bright)
+        this.boundaryG[bi] = clampByte(roles.oilB[1] * 0.35 + d1 * 50 + bright * 0.9)
+        this.boundaryB[bi] = clampByte(roles.water[2] * 0.4 + d2 * 70 + bright * 0.85)
       }
     }
   }
@@ -227,7 +240,7 @@ export class LiquidLightRenderer {
       + water[this.sim.ix(ii, jj + 1)] - water[this.sim.ix(ii, jj - 1)]
     const grad = Math.sqrt(gx * gx + gy * gy)
     const mix = Math.abs(oil[this.sim.ix(ii, jj)] - water[this.sim.ix(ii, jj)])
-    return Math.min(1, grad * 2.8 + mix * 0.6)
+    return Math.min(1, grad * 3.2 + mix * 0.45)
   }
 
   private applyEdgeFade(
